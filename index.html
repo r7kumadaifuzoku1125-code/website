@@ -1,0 +1,1012 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>天秤ブロック</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Shippori+Mincho+B1:wght@700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* 構成: 左にゲーム盤(ゲージ→盤面→操作)、右にルール。盤面は天秤の台ごと傾く。単一の暗い配色で通す。 */
+:root{
+  --bg:#101a24; --panel:#162433; --panel2:#1c2f42; --line:#2b4055;
+  --fg:#e8eef2; --muted:#93a7b7; --brass:#e3b85c; --danger:#ea6a52; --ok:#67c3a0;
+  --w1:#8fc1d9; --w2:#67c3a0; --w3:#e3b85c; --w4:#e57e5e; --w5:#d65f8a; --w6:#9a6bd1;
+  --font-display:"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif;
+  --font-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--fg); font-family:var(--font-body); font-size:15px; line-height:1.65;
+  padding-block:22px 36px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap{max-width:960px;margin:0 auto}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.head{margin-bottom:20px}
+h1{font-family:var(--font-display);font-weight:800;font-size:clamp(30px,6vw,44px);letter-spacing:.04em;line-height:1.15;margin:0 0 6px;text-wrap:balance}
+.sub{margin:0;color:var(--muted);max-width:34em;text-wrap:pretty}
+.layout{display:grid;grid-template-columns:minmax(0,500px) minmax(0,1fr);gap:32px;align-items:start}
+@media (max-width:800px){.layout{grid-template-columns:minmax(0,1fr)}}
+.game{min-width:0}
+.hud{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0}
+.stat{padding-left:12px;border-left:1px solid var(--line)}
+.stat:first-child{padding-left:0;border-left:0}
+.stat .k{display:block;font-size:11px;color:var(--muted);line-height:1.3}
+.stat .v{display:block;font-family:var(--font-mono);font-weight:700;font-size:20px;line-height:1.35;font-variant-numeric:tabular-nums}
+.stat .v.urgent{color:var(--brass)}
+.gauge{margin-top:14px}
+.gauge-top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);margin-bottom:5px}
+.gauge-top b{color:var(--fg);font-size:14px}
+.bar{position:relative;height:14px;border:1px solid var(--line);border-radius:8px}
+.track{position:absolute;inset:0;border-radius:7px;overflow:hidden;background:linear-gradient(90deg,rgba(234,106,82,.3) 0 7.5%,var(--panel) 7.5% 92.5%,rgba(234,106,82,.3) 92.5% 100%)}
+.fill{position:absolute;top:0;bottom:0;left:50%;width:0;background:var(--ok);transition:left .2s,width .2s,background .2s}
+.mid{position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--line)}
+.pre{position:absolute;top:-4px;bottom:-4px;width:4px;margin-left:-2px;border-radius:2px;background:var(--fg);transition:left .12s}
+.scale{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:3px}
+.board{position:relative;margin-top:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+canvas{display:block;width:100%;height:auto;touch-action:none;cursor:pointer}
+.over{position:absolute;inset:0;display:grid;place-content:center;gap:10px;text-align:center;padding:24px;background:rgba(16,26,36,.88);overflow:auto}
+.show-res{position:absolute;top:10px;left:50%;transform:translateX(-50%);min-height:40px;padding:0 18px;font-size:14px;background:rgba(16,26,36,.94)}
+.over h2{font-family:var(--font-display);font-size:30px;margin:0;font-weight:800}
+.over p{margin:0;color:var(--muted)}
+.over .res{display:flex;justify-content:center;gap:28px;margin:6px 0 10px}
+.over .res span{display:block;font-size:11px;color:var(--muted)}
+.over .res b{font-family:var(--font-mono);font-size:24px}
+.quiz{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;gap:12px;padding:22px;background:rgba(16,26,36,.95);outline:none}
+.q-label{margin:0;font-size:12px;color:var(--muted)}
+.q-word{margin:0;font-family:var(--font-mono);font-weight:700;font-size:clamp(28px,8vw,38px);line-height:1.2;overflow-wrap:anywhere}
+.q-choices{display:grid;gap:8px}
+.q-choices button{display:flex;align-items:center;gap:12px;text-align:left;min-height:48px;padding:0 14px}
+.qk{display:inline-grid;place-items:center;flex:none;width:24px;height:24px;border-radius:6px;background:var(--panel);font-size:12px;color:var(--muted)}
+.q-choices button.right{border-color:var(--ok);background:rgba(103,195,160,.2)}
+.q-choices button.wrong{border-color:var(--danger);background:rgba(234,106,82,.2)}
+.q-choices button:disabled{cursor:default;color:var(--fg)}
+.q-result{margin:0;min-height:1.65em}
+.home-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,380px);gap:40px;align-items:center;padding-block:16px 8px}
+.home-title{font-family:var(--font-display);font-weight:800;font-size:clamp(40px,10vw,76px);letter-spacing:.04em;line-height:1.1;margin:0 0 14px}
+.home-lead{margin:0;max-width:30em;color:var(--muted);text-wrap:pretty}
+.home-best{display:flex;align-items:baseline;gap:10px;margin-top:22px}
+.home-best .k{font-size:12px;color:var(--muted)}
+.home-best b{font-size:28px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+button.big{min-height:56px;padding:0 30px;font-size:17px}
+.home-how{margin-top:28px;max-width:30em}
+.home-art{width:100%;height:auto;display:block}
+.home-link{min-height:36px;padding:0 12px;font-size:13px;margin-bottom:12px}
+.svgnum{font-family:var(--font-mono);font-weight:700;font-size:16px;text-anchor:middle;dominant-baseline:central;fill:#101a24}
+.svgbeam{font-family:var(--font-mono);font-weight:700;font-size:10px;text-anchor:middle;dominant-baseline:central;fill:#2a1f08}
+.s1{fill:var(--w1)}.s2{fill:var(--w2)}.s3{fill:var(--w3)}.s4{fill:var(--w4)}.s5{fill:var(--w5)}.s6{fill:var(--w6)}
+@media (max-width:800px){.home-grid{grid-template-columns:minmax(0,1fr);gap:20px}.home-art{order:-1;max-width:300px}}
+.doc{max-width:42em}
+.doc h2{font-family:var(--font-display);font-weight:800;font-size:22px;margin:30px 0 8px;line-height:1.3}
+.doc p{margin:0 0 10px;text-wrap:pretty}
+.doc ul{margin:0 0 10px;padding-left:1.3em}
+.doc li{margin-bottom:6px}
+.table-wrap{overflow-x:auto;margin-bottom:10px}
+.score-table{border-collapse:collapse;width:100%;min-width:420px}
+.score-table th,.score-table td{padding:10px 12px 10px 0;border-top:1px solid var(--line);text-align:left;vertical-align:top;font-size:14px}
+.score-table th{white-space:nowrap;color:var(--brass);font-weight:700;padding-right:18px}
+.v-tools{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-bottom:10px}
+.seg{display:inline-flex}
+.seg button{min-height:40px;padding:0 18px;border-radius:0}
+.seg button:first-child{border-radius:10px 0 0 10px}
+.seg button:last-child{border-radius:0 10px 10px 0;margin-left:-1px}
+.seg button.on{background:var(--brass);color:#1a1408;border-color:var(--brass);font-weight:700}
+.v-hide{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:14px}
+.v-hide input{width:18px;height:18px;accent-color:var(--brass)}
+.v-count{margin:0 0 6px;font-size:13px}
+.v-list{max-width:42em;border-bottom:1px solid var(--line)}
+.v-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) 4.5em;gap:12px;align-items:center;width:100%;min-height:46px;padding:8px 4px;background:none;border:0;border-top:1px solid var(--line);border-radius:0;text-align:left;cursor:default}
+.v-row:hover{background:var(--panel)}
+.v-en{font-family:var(--font-mono);font-weight:700;overflow-wrap:anywhere}
+.v-ja{overflow-wrap:anywhere}
+.v-st{font-family:var(--font-mono);font-size:12px;color:var(--muted);text-align:right}
+.v-st.ng{color:var(--danger)}
+.v-empty{padding:18px 4px;color:var(--muted);border-top:1px solid var(--line)}
+.hide-ja .v-row{cursor:pointer}
+.hide-ja .v-ja{color:transparent;background:var(--panel2);border-radius:4px;user-select:none}
+.hide-ja .v-row.shown .v-ja{color:inherit;background:none;user-select:auto}
+button{font:inherit;color:var(--fg);background:var(--panel2);border:1px solid var(--line);border-radius:10px;min-height:50px;padding:0 18px;cursor:pointer}
+button:hover{background:#244058}
+button:active{transform:translateY(1px)}
+button:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+button.main{background:var(--brass);color:#1a1408;border-color:var(--brass);font-weight:700}
+button.main:hover{background:#efc872}
+.pad{display:grid;grid-template-columns:1fr 2fr 1fr;gap:8px;margin-top:12px}
+.queue{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--muted)}
+.chip{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:7px;color:var(--bg);font-family:var(--font-mono);font-weight:700;font-size:15px}
+.chip.now{width:38px;height:38px;font-size:18px}
+.c1{background:var(--w1)}.c2{background:var(--w2)}.c3{background:var(--w3)}.c4{background:var(--w4)}
+.c5{background:var(--w5)}
+.c6{background:var(--w6)}
+.cb{background:#cfd8e3;border-radius:50%}
+.cx{background:#0b121a;color:var(--danger);box-shadow:inset 0 0 0 2px var(--danger);border-radius:50%;font-family:var(--font-body)}
+.rules h2{font-family:var(--font-display);font-size:24px;font-weight:800;margin:0 0 6px}
+.rule-list{margin:0}
+.rule-list>div{padding:12px 0;border-top:1px solid var(--line)}
+.rule-list dt{font-weight:700;color:var(--brass);font-size:13px}
+.rule-list dd{margin:2px 0 0;max-width:36em;text-wrap:pretty}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:14px 0;border-top:1px solid var(--line)}
+.legend span{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.legend .chip{width:24px;height:24px;font-size:13px;border-radius:6px}
+.keys{padding:14px 0 0;border-top:1px solid var(--line);color:var(--muted);font-size:13px;margin:0}
+kbd{font-family:var(--font-mono);font-size:12px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--fg)}
+body.gaming{padding-block:12px}
+@media (min-width:600px){
+  body.gaming #gameView{max-width:1400px;height:calc(var(--vh,100vh) - 24px);display:flex;flex-direction:column;min-height:0}
+  #gameView .head{display:flex;align-items:center;gap:14px;margin-bottom:10px;flex:none}
+  #gameView .head h1{font-size:24px;margin:0}
+  #gameView .head .sub{display:none}
+  #gameView .home-link{margin:0}
+  #gameView .layout{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);align-items:stretch;gap:0}
+  #gameView .rules{display:none}
+  #gameView .game{min-height:0;display:grid;gap:10px 18px}
+  #gameView .hud{grid-area:hud}
+  #gameView .gauge{grid-area:gauge;margin-top:0}
+  #gameView .board{grid-area:board;margin-top:0;min-width:0;min-height:0}
+  #gameView .pad{grid-area:pad;margin-top:0}
+  #gameView .queue{grid-area:queue;margin-top:0}
+  #gameView canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+  #gameView .pad button{min-height:64px;font-size:18px}
+  .quiz,.over{overflow:auto}
+}
+@media (min-width:600px) and (orientation:portrait){
+  #gameView .game{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto auto;grid-template-areas:"hud" "gauge" "board" "queue" "pad"}
+}
+@media (min-width:600px) and (orientation:landscape){
+  #gameView .game{grid-template-columns:minmax(0,1fr) minmax(250px,320px);grid-template-rows:auto auto auto minmax(0,1fr) auto;grid-template-areas:"board hud" "board gauge" "board queue" "board ." "board pad"}
+}
+@media (min-width:1200px) and (orientation:landscape){
+  #gameView .layout{grid-template-columns:minmax(0,1fr) 300px;gap:24px}
+  #gameView .rules{display:block;overflow:auto;min-height:0}
+}
+@media (max-height:520px){
+  .q-choices button{min-height:38px}
+  .quiz{gap:6px;padding:12px}
+}
+@media (prefers-reduced-motion:reduce){.fill,.pre{transition:none}}
+</style>
+
+<main class="wrap" id="home">
+  <div class="home-grid">
+    <div class="home-copy">
+      <h1 class="home-title">天秤ブロック</h1>
+      <p class="home-lead">柱に重りを落として、台を傾けすぎないまま横一列をそろえます。3 手ごとの英単語クイズに正解すると、スコア倍率が上がります。</p>
+      <div class="home-best"><span class="k">ベスト</span><b class="mono" id="homeBest">0</b></div>
+      <div class="actions">
+        <button class="main big" id="start" type="button">はじめる</button>
+        <button class="big" id="resume" type="button" hidden>つづきから</button>
+        <button class="big" id="howBtn" type="button">あそびかた</button>
+        <button class="big" id="vocabBtn" type="button">単語帳</button>
+      </div>
+      <dl class="rule-list home-how">
+        <div><dt>落とす</dt><dd>重さ 1〜6 のブロックを 9 本の柱のどれかへ。</dd></div>
+        <div><dt>つり合う</dt><dd>トルクが ±18 を超えると台が傾ききって負けです。</dd></div>
+        <div><dt>答える</dt><dd>3 手ごとの英単語クイズで、倍率は最大 ×3.0 まで上がります。</dd></div>
+      </dl>
+    </div>
+    <svg class="home-art" viewBox="0 0 360 290" role="img" aria-label="傾いた天秤の台に、重さの違うブロックが積まれている"><path d="M180 234 L146 276 L214 276 Z" fill="#24384b"/><rect x="70" y="276" width="220" height="4" rx="2" fill="#2b4055"/><g transform="rotate(3 180 234)"><rect x="11" y="178" width="34" height="34" rx="6" class="s3"/><text x="28" y="195" class="svgnum">3</text><rect x="49" y="178" width="34" height="34" rx="6" class="s6"/><text x="66" y="195" class="svgnum">6</text><rect x="87" y="178" width="34" height="34" rx="6" class="s2"/><text x="104" y="195" class="svgnum">2</text><rect x="87" y="140" width="34" height="34" rx="6" class="s1"/><text x="104" y="157" class="svgnum">1</text><rect x="125" y="178" width="34" height="34" rx="6" class="s2"/><text x="142" y="195" class="svgnum">2</text><circle cx="180" cy="195" r="17" fill="#cfd8e3"/><text x="180" y="195" class="svgnum">−2</text><rect x="201" y="178" width="34" height="34" rx="6" class="s1"/><text x="218" y="195" class="svgnum">1</text><rect x="239" y="178" width="34" height="34" rx="6" class="s3"/><text x="256" y="195" class="svgnum">3</text><rect x="239" y="140" width="34" height="34" rx="6" class="s2"/><text x="256" y="157" class="svgnum">2</text><rect x="277" y="178" width="34" height="34" rx="6" class="s4"/><text x="294" y="195" class="svgnum">4</text><rect x="315" y="178" width="34" height="34" rx="6" class="s5"/><text x="332" y="195" class="svgnum">5</text><rect x="3" y="214" width="354" height="20" rx="4" fill="#c9a35a"/><text x="28" y="224.5" class="svgbeam">−4</text><text x="66" y="224.5" class="svgbeam">−3</text><text x="104" y="224.5" class="svgbeam">−2</text><text x="142" y="224.5" class="svgbeam">−1</text><text x="180" y="224.5" class="svgbeam">0</text><text x="218" y="224.5" class="svgbeam">+1</text><text x="256" y="224.5" class="svgbeam">+2</text><text x="294" y="224.5" class="svgbeam">+3</text><text x="332" y="224.5" class="svgbeam">+4</text></g><line x1="104" y1="84" x2="104" y2="136" stroke="#93a7b7" stroke-width="2" stroke-dasharray="4 6"/><circle cx="104" cy="62" r="20" fill="#0b121a" stroke="#ea6a52" stroke-width="3"/><text x="104" y="62" class="svgnum" style="fill:#ea6a52;font-family:var(--font-body)">爆</text></svg>
+  </div>
+</main>
+
+<main class="wrap" id="gameView" hidden>
+  <header class="head">
+    <button type="button" class="home-link" id="homeBtn">← ホームへ</button>
+    <h1>天秤ブロック</h1>
+    <p class="sub">重さのちがうブロックを柱に落とします。台が傾ききる前に、横一列をそろえましょう。</p>
+  </header>
+  <div class="layout">
+    <section class="game" aria-label="ゲーム">
+      <div class="hud">
+        <div class="stat"><span class="k">スコア <span id="mult" class="mono">×1.0</span></span><span class="v" id="score">0</span></div>
+        <div class="stat"><span class="k">ベスト</span><span class="v" id="best">0</span></div>
+        <div class="stat"><span class="k">レベル</span><span class="v" id="level">1</span></div>
+        <div class="stat"><span class="k">風まで</span><span class="v" id="windin">6 手</span></div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-top"><span>トルク <b class="mono" id="tq">0</b> / 限界 ±18</span><span class="mono" id="pq"></span></div>
+        <div class="bar"><div class="track"><div class="fill" id="gf"></div><div class="mid"></div></div><div class="pre" id="gp" hidden></div></div>
+        <div class="scale mono"><span>−18</span><span>0</span><span>+18</span></div>
+      </div>
+      <div class="board">
+        <canvas id="cv" role="img" aria-label="天秤の台と7本の柱。ブロックを積む盤面"></canvas>
+        <div class="quiz" id="quiz" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="qWord" hidden>
+          <p class="q-label">3 手ごとの英単語クイズ</p>
+          <h2 class="q-word" id="qWord">word</h2>
+          <div class="q-choices" id="qChoices"></div>
+          <p class="q-result" id="qResult" aria-live="polite"></p>
+          <button class="main" id="qNext" type="button" hidden>つづける</button>
+        </div>
+        <button class="show-res" id="showRes" type="button" hidden>結果を見る</button>
+        <div class="over" id="over" hidden>
+          <h2 id="ovTitle">崩壊</h2>
+          <p id="ovMsg"></p>
+          <div class="res"><div><span>スコア</span><b id="ovScore">0</b></div><div><span>ベスト</span><b id="ovBest">0</b></div></div>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="main" id="again" type="button">もう一度</button><button id="toHome" type="button">ホームへ</button><button id="peek" type="button">盤面を見る</button></div>
+        </div>
+      </div>
+      <div class="pad">
+        <button id="bl" type="button" aria-label="左の柱へ">←</button>
+        <button id="bd" type="button" class="main">落とす</button>
+        <button id="br" type="button" aria-label="右の柱へ">→</button>
+      </div>
+      <div class="queue"><span>次のブロック</span><span id="queue" style="display:flex;align-items:center;gap:8px"></span><span id="qin" class="mono" style="margin-left:auto"></span></div>
+    </section>
+
+    <aside class="rules">
+      <h2>ルール</h2>
+      <dl class="rule-list">
+        <div><dt>落とす</dt><dd>毎手、重さ 1〜6 のブロックを 9 本の柱のどれかに落とします。柱は 9 段までです。</dd></div>
+        <div><dt>天秤</dt><dd>台は中心で支えられています。トルク(重さ × 中心からの柱の距離、の合計)が ±18 を超えると傾ききって負けです。</dd></div>
+        <div><dt>消える</dt><dd>横 9 マスがそろった行は消えて点になります。消えた行の重さは台から離れるので、つり合いも動きます。</dd></div>
+        <div><dt>風</dt><dd>数手ごとに、しま模様の風ブロックが柱の上に予告された位置へ落ちます。レベルが上がると間隔が縮みます。</dd></div>
+        <div><dt>つり合い</dt><dd>落としたあとトルクがちょうど 0 で、ブロックが 6 個以上あればボーナスが入ります。</dd></div>
+        <div><dt>特殊ブロック</dt><dd>丸い銀色の浮き球は逆向きに効くので、傾きを戻したいときに使えます。「爆」は着地した場所の下と左右のブロックを消します。どちらもたまに次のブロックに混じります。</dd></div>
+        <div><dt>英単語クイズ</dt><dd>3 手ごとに英単語の 4 択問題が出ます。正解で +50 点が入り、スコア倍率が 10% ずつ上がります(×1.1、×1.2…)。倍率はそれ以降のすべての得点にかかります。上限は ×3.0 で、上限に達してからは正解のたびに基本点が 500 点になり、倍率がかかって 1500 点が入ります。まちがえると風が 1 手早く来ます。選択肢は <kbd>1</kbd>〜<kbd>4</kbd> でも選べます。</dd></div>
+      </dl>
+      <div class="legend" aria-label="重さの色">
+        <span><i class="chip c1">1</i>軽い</span><span><i class="chip c2">2</i></span><span><i class="chip c3">3</i></span><span><i class="chip c4">4</i></span><span><i class="chip c5">5</i></span><span><i class="chip c6">6</i>重い</span><span><i class="chip cb">−2</i>浮き球</span><span><i class="chip cx">爆</i>爆弾</span>
+      </div>
+      <p class="keys"><kbd>←</kbd> <kbd>→</kbd> または <kbd>1</kbd>〜<kbd>9</kbd> で柱を選び、<kbd>Space</kbd> で落とします。<kbd>R</kbd> でやり直し。盤面はクリックで落とし、タッチでは指で狙って離すと落ちます。</p>
+    </aside>
+  </div>
+</main>
+
+<main class="wrap" id="howView" hidden>
+  <header class="head">
+    <button type="button" class="home-link" data-home>← ホームへ</button>
+    <h1>あそびかた</h1>
+    <p class="sub">1 手ごとに、ブロックを置く柱を選びます。台を傾けすぎないように、横一列をそろえて消し続けます。</p>
+  </header>
+  <div class="doc">
+    <h2>1 手の流れ</h2>
+    <p>次のブロックを置く柱を 1 本選ぶと、ブロックはその柱の一番上に積まれます。柱は 9 段までで、満杯の柱には置けません。次に来るブロックは 3 つ先まで見えているので、先を読んで置き場所を決めます。</p>
+
+    <h2>トルクの数え方</h2>
+    <p>台の中心の柱が 0、右へ +1〜+4、左へ −1〜−4 です。ブロックごとに「重さ × 柱の番号」を出し、全部足したものがトルクで、台の傾きになります。</p>
+    <p>例として、柱 +3 に重さ 5 を置くと <span class="mono">5 × 3 = +15</span>、柱 −2 に重さ 3 を置くと <span class="mono">3 × (−2) = −6</span> です。この 2 つだけなら、合計は <span class="mono">+9</span> です。</p>
+    <p>トルクが ±18 を超えると、台が傾ききって負けです。ゲージの白い印は、いま選んでいる柱に落としたときのトルクの目安です。列が消える場合の変化は含みません。</p>
+
+    <h2>列を消す</h2>
+    <p>横 9 マスがすべて埋まった行は消えて、点が入ります。消えた行の上のブロックは 1 段落ちます。消えた行の重さは台から外れるので、トルクが変わります。傾きが戻ることも、逆に大きくなることもあります。</p>
+
+    <h2>風</h2>
+    <p>数手ごとに、しま模様の風ブロック(重さ 2〜5)が、予告された柱に落ちます。予告は柱の上の「風 3」のような印で、次の手で来るときは色が濃くなります。</p>
+    <p>間隔はレベル 1 で 5 手ごとです。レベルが 1 上がるごとに 1 手ずつ短くなり、最短で 2 手ごとになります。レベルは 2 列消すごとに上がります。</p>
+
+    <h2>特殊ブロック</h2>
+    <p>どちらもたまに、次のブロックに混じります。</p>
+    <ul>
+      <li><b>浮き球</b>(丸い銀色のブロック、「−2」など): 重さが逆向きに効きます。置いた柱の番号の符号が逆になるので、傾きを戻したいときに使えます。</li>
+      <li><b>爆弾</b>(黒い丸の「爆」): 着地した場所の真下と、左右のブロックを消します。狙った場所には赤い枠が出ます。対象がなければ不発です。</li>
+    </ul>
+
+    <h2>英単語クイズ</h2>
+    <p>3 手ごとに、英単語の 4 択問題が出ます。正解すると +50 点が入り、スコア倍率が 0.1 上がります。倍率は ×3.0 が上限で、上限に達してからは、正解のたびに基本点が 500 点になります(倍率がかかって 1500 点)。不正解のときは、風が 1 手早く来ます。</p>
+    <p>答えた結果は単語帳に記録されます。</p>
+
+    <h2>得点</h2>
+    <div class="table-wrap">
+      <table class="score-table">
+        <tbody>
+          <tr><th>列を消す</th><td class="mono">100 × 列数 × 列数 + 10 × 消えた重さの合計</td></tr>
+          <tr><th>爆弾</th><td class="mono">10 × 消えた重さの合計</td></tr>
+          <tr><th>つり合い</th><td><span class="mono">20 × レベル</span>(落としたあとトルクがちょうど 0 で、ブロックが 6 個以上のとき)</td></tr>
+          <tr><th>英単語クイズ</th><td><span class="mono">50</span>(倍率が上限に達してからは <span class="mono">500</span>)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>表の点数はすべて基本点で、そのときのスコア倍率がかかります。</p>
+
+    <h2>操作</h2>
+    <p><kbd>←</kbd> <kbd>→</kbd> または <kbd>1</kbd>〜<kbd>9</kbd> で柱を選び、<kbd>Space</kbd> か <kbd>↓</kbd> で落とします。<kbd>R</kbd> でやり直しです。マウスでは盤面をクリックすると落ち、タッチでは指で狙って離すと落ちます。盤面の下のボタンでも操作できます。クイズの選択肢は <kbd>1</kbd>〜<kbd>4</kbd> でも選べます。</p>
+  </div>
+</main>
+
+<main class="wrap" id="vocabView" hidden>
+  <header class="head">
+    <button type="button" class="home-link" data-home>← ホームへ</button>
+    <h1>単語帳</h1>
+    <p class="sub">クイズに出る単語の一覧です。まちがえた単語は「要復習」に入り、あとで正解すると外れます。</p>
+  </header>
+  <div class="v-tools">
+    <div class="seg" role="group" aria-label="表示する単語">
+      <button type="button" id="vAll" class="on" aria-pressed="true">すべて</button><button type="button" id="vNg" aria-pressed="false">要復習</button>
+    </div>
+    <label class="v-hide"><input type="checkbox" id="vHide"> 意味を隠す(タップで表示)</label>
+  </div>
+  <p class="muted v-count" id="vCount"></p>
+  <div class="v-list" id="vList"></div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var COLS = 9, ROWS = 9, CELL = 44, PAD = 52, TOP = 96, LIMIT = 18, MID = 4;
+  var W = COLS * CELL + PAD * 2, GB = TOP + ROWS * CELL, BEAM = 20, PY = GB + BEAM, H = PY + 84, PX = W / 2;
+  var MAXT = 5 * Math.PI / 180, COLLAPSE = 18 * Math.PI / 180;
+  var COLORS = { 1: '#8fc1d9', 2: '#67c3a0', 3: '#e3b85c', 4: '#e57e5e', 5: '#d65f8a', 6: '#9a6bd1' };
+  var INK = '#101a24', LINE = '#2b4055', FG = '#e8eef2', BRASS = '#e3b85c', DANGER = '#ea6a52', BALLOON = '#cfd8e3';
+  var FONT_B = '"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif';
+  var FONT_M = '"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace';
+  var reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  var DPR = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  cv.style.aspectRatio = W + ' / ' + H;
+  var K = DPR;
+  function fit() {
+    if (gameEl.hidden) return;
+    var box = cv.parentNode, bw = box.clientWidth, bh = box.clientHeight, cw, ch;
+    if (window.matchMedia('(min-width: 600px)').matches && bh > 0) {
+      var sc = Math.min((bw - 8) / W, (bh - 8) / H);
+      cw = Math.floor(W * sc); ch = Math.floor(H * sc);
+    } else { cw = bw; ch = Math.round(bw * H / W); }
+    if (cw < 50 || ch < 50) return;
+    cv.style.width = cw + 'px'; cv.style.height = ch + 'px';
+    K = Math.min(3, Math.max(1, cw * (window.devicePixelRatio || 1) / W));
+    var nw = Math.round(W * K), nh = Math.round(H * K);
+    if (cv.width !== nw || cv.height !== nh) { cv.width = nw; cv.height = nh; }
+  }
+  function setVh() { document.documentElement.style.setProperty('--vh', window.innerHeight + 'px'); }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var elScore = $('score'), elBest = $('best'), elLevel = $('level'), elWind = $('windin');
+  var elTq = $('tq'), elPq = $('pq'), elGf = $('gf'), elGp = $('gp'), elQueue = $('queue');
+  var elOver = $('over');
+  var elQin = $('qin'), elMult = $('mult'), quizEl = $('quiz'), qWord = $('qWord'), qChoices = $('qChoices'), qResult = $('qResult'), qNext = $('qNext');
+  var homeEl = $('home'), gameEl = $('gameView'), howEl = $('howView'), vocabEl = $('vocabView'), elStart = $('start'), elResume = $('resume'), elHomeBest = $('homeBest');
+  var moves = 0, multT = 10, asking = false, qPhase = '', qCorrect = 0, qAnswer = '', qEn = '', qRight = false, qGain = 0, quizBag = [];
+
+  var cols, queue, score, best = 0, rowsCleared, level, windIn, wind, over, cursor, curX, angle, target;
+  var floaters = [], parts = [], pressing = false, lastT = 0;
+  try { best = +localStorage.getItem('tenbin-best') || 0; } catch (e) {}
+
+  function now() { return performance.now(); }
+  function randW() { var r = Math.random(); return r < 0.12 ? 1 : r < 0.30 ? 2 : r < 0.52 ? 3 : r < 0.72 ? 4 : r < 0.88 ? 5 : 6; }
+  function mk(w, isWind, s) { return { w: w, wind: !!isWind, s: s || 1, k: 0, t0: 0, dur: 0 }; }
+  function ease(t) { return t * t * (3 - 2 * t); }
+  function fmt(n) { return n > 0 ? '+' + n : n < 0 ? '−' + (-n) : '0'; }
+  function torque() {
+    var t = 0;
+    for (var c = 0; c < COLS; c++) for (var i = 0; i < cols[c].length; i++) t += cols[c][i].s * cols[c][i].w * (c - MID);
+    return t;
+  }
+  function total() { var n = 0; for (var c = 0; c < COLS; c++) n += cols[c].length; return n; }
+  function period() { return Math.max(2, 5 - (level - 1)); }
+  function freeCols() { var a = []; for (var c = 0; c < COLS; c++) if (cols[c].length < ROWS) a.push(c); return a; }
+  function makeWind() {
+    var f = freeCols();
+    return { col: f.length ? f[Math.floor(Math.random() * f.length)] : -1, w: 2 + Math.floor(Math.random() * 4) };
+  }
+  function setTarget() {
+    var r = Math.max(-1.3, Math.min(1.3, torque() / LIMIT));
+    target = r * MAXT;
+    if (reduced) angle = target;
+  }
+  function startFall(b, k, delay) {
+    if (reduced) { b.k = 0; return; }
+    b.k = k; b.t0 = now() + (delay || 0); b.dur = 140 + k * 22;
+  }
+  function floater(text, color) {
+    var y = TOP + 130 + floaters.length * 26;
+    floaters.push({ text: text, color: color || BRASS, x: W / 2, y: y, t0: now() });
+  }
+
+  var WORDS = [
+    ['abandon', '捨てる'], ['accept', '受け入れる'], ['achieve', '達成する'], ['adventure', '冒険'], ['ancient', '古代の'],
+    ['balance', 'つり合い'], ['borrow', '借りる'], ['brave', '勇敢な'], ['candle', 'ろうそく'], ['challenge', '挑戦'],
+    ['choose', '選ぶ'], ['common', '共通の'], ['courage', '勇気'], ['create', '作り出す'], ['curious', '好奇心の強い'],
+    ['danger', '危険'], ['decide', '決める'], ['deliver', '配達する'], ['describe', '描写する'], ['destroy', '破壊する'],
+    ['discover', '発見する'], ['doubt', '疑い'], ['earn', 'かせぐ'], ['effort', '努力'], ['enemy', '敵'],
+    ['enough', '十分な'], ['escape', '逃げる'], ['exchange', '交換する'], ['explain', '説明する'], ['familiar', 'よく知っている'],
+    ['fortune', '幸運'], ['gather', '集める'], ['generous', '気前のよい'], ['guess', '推測する'], ['harvest', '収穫'],
+    ['imagine', '想像する'], ['journey', '旅'], ['justice', '正義'], ['knowledge', '知識'], ['lawyer', '弁護士'],
+    ['lift', '持ち上げる'], ['mystery', '謎'], ['neighbor', '隣人'], ['notice', '気づく'], ['obey', '従う'],
+    ['ordinary', 'ふつうの'], ['patience', '忍耐'], ['promise', '約束'], ['protect', '守る'], ['quarrel', '口論'],
+    ['refuse', '断る'], ['repair', '修理する'], ['reward', 'ほうび'], ['shelter', '避難所'], ['silence', '沈黙'],
+    ['suddenly', '突然'], ['survive', '生き残る'], ['tremble', '震える'], ['unusual', 'めずらしい'], ['victory', '勝利'],
+    ['whisper', 'ささやく'], ['wisdom', '知恵'], ['weight', '重さ']
+  ];
+  var vstate = {}, vFilter = 'all';
+  try { vstate = JSON.parse(localStorage.getItem('tenbin-vocab') || '{}') || {}; } catch (err) { vstate = {}; }
+  function recordWord(en, ok) {
+    var s = vstate[en] || (vstate[en] = { r: 0, w: 0, last: '' });
+    if (ok) s.r++; else s.w++;
+    s.last = ok ? 'ok' : 'ng';
+    try { localStorage.setItem('tenbin-vocab', JSON.stringify(vstate)); } catch (err) {}
+  }
+  function addScore(p) {
+    var g = Math.round(p * multT / 10);
+    score += g;
+    return g;
+  }
+  function shuffle(a) {
+    for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+  function showQuiz() {
+    if (!quizBag.length) quizBag = shuffle(WORDS.slice());
+    var q = quizBag.pop();
+    var wrong = shuffle(WORDS.filter(function (w) { return w[1] !== q[1]; }).map(function (w) { return w[1]; })).slice(0, 3);
+    var opts = shuffle([q[1]].concat(wrong));
+    qCorrect = opts.indexOf(q[1]); qAnswer = q[1]; qRight = false;
+    qWord.textContent = q[0]; qEn = q[0];
+    qChoices.textContent = '';
+    opts.forEach(function (text, i) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.dataset.i = String(i);
+      var kk = document.createElement('span'); kk.className = 'qk mono'; kk.textContent = String(i + 1);
+      var tt = document.createElement('span'); tt.textContent = text;
+      b.appendChild(kk); b.appendChild(tt);
+      qChoices.appendChild(b);
+    });
+    qResult.textContent = ''; qNext.hidden = true; qNext.disabled = false;
+    quizEl.hidden = false; asking = true; qPhase = 'ask';
+    try {
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      quizEl.focus({ preventScroll: true });
+    } catch (err) {}
+  }
+  function answer(i) {
+    if (qPhase !== 'ask') return;
+    qPhase = 'result';
+    recordWord(qEn, i === qCorrect);
+    var bs = qChoices.children;
+    for (var n = 0; n < bs.length; n++) {
+      bs[n].disabled = true;
+      if (n === qCorrect) bs[n].classList.add('right');
+      else if (n === i) bs[n].classList.add('wrong');
+    }
+    if (i === qCorrect) {
+      qRight = true;
+      var wasCap = multT >= 30;
+      if (wasCap) { qGain = addScore(500); } else { qGain = addScore(50); multT += 1; }
+      qResult.textContent = wasCap
+        ? '正解。基本点 500 に倍率 ×3.0 がかかって +' + qGain + ' 点。'
+        : '正解。+' + qGain + ' 点。倍率が ×' + (multT / 10).toFixed(1) + ' に上がりました。' + (multT >= 30 ? ' 上限です。以後の正解は基本点 500(倍率がかかって 1500 点)。' : '');
+    } else {
+      var msg = '不正解。答えは「' + qAnswer + '」。';
+      if (windIn > 1) { windIn--; msg += ' 風が 1 手早く来ます。'; }
+      qResult.textContent = msg;
+    }
+    hud();
+    qNext.hidden = false; qNext.disabled = true;
+    setTimeout(function () {
+      qNext.disabled = false;
+      try { qNext.focus({ preventScroll: true }); } catch (err) {}
+    }, 450);
+  }
+  function closeQuiz() {
+    if (qPhase !== 'result') return;
+    quizEl.hidden = true; asking = false; qPhase = '';
+    if (qRight) floater('+' + qGain, '#67c3a0');
+    gauge();
+  }
+
+  function normal() { return { t: 'n', w: randW() }; }
+  function randPiece() {
+    var r = Math.random();
+    if (r < 0.10) return { t: 'b', w: 1 + Math.floor(Math.random() * 4) };
+    if (r < 0.17) return { t: 'x', w: 0 };
+    return normal();
+  }
+  function pieceColor(p) { return p.t === 'x' ? DANGER : p.t === 'b' ? BALLOON : COLORS[p.w]; }
+  function bombTargets(c) {
+    var len = cols[c].length, a = [];
+    if (len > 0) a.push({ c: c, i: len - 1 });
+    if (c > 0 && cols[c - 1].length > len) a.push({ c: c - 1, i: len });
+    if (c < COLS - 1 && cols[c + 1].length > len) a.push({ c: c + 1, i: len });
+    return a;
+  }
+  function previewTorque(t, p, c) {
+    if (p.t === 'x') {
+      bombTargets(c).forEach(function (q) { var b = cols[q.c][q.i]; t -= b.s * b.w * (q.c - MID); });
+      return t;
+    }
+    return t + (p.t === 'b' ? -1 : 1) * p.w * (c - MID);
+  }
+  function slide(b, n) {
+    if (reduced) return;
+    if (b.k > 0 && b.t0 > now()) { b.k += n; b.dur = 140 + b.k * 22; }
+    else { b.k = (b.k > 0 ? b.k : 0) + n; b.t0 = now(); b.dur = 140 + b.k * 22; }
+  }
+  function removeCells(cells) {
+    var byCol = {}, sum = 0;
+    cells.forEach(function (x) { (byCol[x.c] = byCol[x.c] || []).push(x.i); });
+    Object.keys(byCol).forEach(function (key) {
+      var c = +key, R = byCol[key].sort(function (a, b) { return a - b; }), old = cols[c], nw = [];
+      for (var i = 0; i < old.length; i++) {
+        if (R.indexOf(i) >= 0) {
+          sum += old[i].w;
+          if (!reduced) {
+            for (var q = 0; q < 4; q++) {
+              parts.push({ x: PAD + c * CELL + CELL / 2, y: GB - (i + 0.5) * CELL,
+                vx: (Math.random() - 0.5) * 260, vy: -60 - Math.random() * 200, life: 0.7,
+                c: old[i].s < 0 ? BALLOON : COLORS[old[i].w] });
+            }
+          }
+          continue;
+        }
+        var sh = 0;
+        for (var r = 0; r < R.length; r++) if (R[r] < i) sh++;
+        if (sh > 0) slide(old[i], sh);
+        nw.push(old[i]);
+      }
+      cols[c] = nw;
+    });
+    return sum;
+  }
+  function explode(c) {
+    var cells = bombTargets(c);
+    var bx = PAD + c * CELL + CELL / 2, by = GB - (cols[c].length + 0.5) * CELL;
+    if (!reduced) {
+      for (var q = 0; q < 12; q++) {
+        parts.push({ x: bx, y: by, vx: (Math.random() - 0.5) * 360, vy: -80 - Math.random() * 220, life: 0.7, c: '#ffd27a' });
+      }
+    }
+    if (!cells.length) { floater('不発', '#93a7b7'); return; }
+    var pts = addScore(10 * removeCells(cells));
+    floater('爆発 +' + pts, DANGER);
+  }
+
+  function newGame() {
+    cols = [[3], [], [2, 1], [2], [], [1], [3, 2], [], [2]].map(function (col) { return col.map(function (w) { return mk(w, false); }); });
+    queue = [normal(), normal(), normal()];
+    score = 0; rowsCleared = 0; level = 1; windIn = period(); wind = makeWind();
+    over = false; cursor = MID; curX = MID; floaters = []; parts = [];
+    elOver.hidden = true; $('showRes').hidden = true;
+    quizEl.hidden = true; asking = false; qPhase = ''; moves = 0; multT = 10;
+    setTarget(); angle = target;
+    hud(); gauge();
+  }
+
+  function hud() {
+    elScore.textContent = score;
+    elBest.textContent = Math.max(best, score);
+    elLevel.textContent = level;
+    elWind.textContent = windIn <= 1 ? '次の手' : windIn + ' 手';
+    elWind.className = 'v' + (windIn <= 1 ? ' urgent' : '');
+    elQin.textContent = 'クイズまで ' + (3 - moves % 3) + ' 手';
+    elMult.textContent = '×' + (multT / 10).toFixed(1) + (multT >= 30 ? ' MAX' : '');
+    elMult.style.color = multT > 10 ? 'var(--brass)' : '';
+    elQueue.textContent = '';
+    for (var i = 0; i < queue.length; i++) {
+      var s = document.createElement('i');
+      s.className = 'chip ' + (queue[i].t === 'x' ? 'cx' : queue[i].t === 'b' ? 'cb' : 'c' + queue[i].w) + (i === 0 ? ' now' : '');
+      s.textContent = queue[i].t === 'x' ? '爆' : queue[i].t === 'b' ? '−' + queue[i].w : queue[i].w;
+      elQueue.appendChild(s);
+    }
+  }
+
+  function gauge() {
+    var t = torque();
+    function pos(v) { return 50 + Math.max(-LIMIT, Math.min(LIMIT, v)) / LIMIT * 50; }
+    var p = pos(t);
+    elGf.style.left = Math.min(50, p) + '%';
+    elGf.style.width = Math.abs(p - 50) + '%';
+    var ratio = Math.abs(t) / LIMIT;
+    elGf.style.background = ratio >= 0.85 ? 'var(--danger)' : ratio >= 0.6 ? 'var(--brass)' : 'var(--ok)';
+    elTq.textContent = fmt(t);
+    if (!over && cols[cursor].length < ROWS) {
+      var pt = previewTorque(t, queue[0], cursor);
+      elGp.hidden = false;
+      elGp.style.left = pos(pt) + '%';
+      elGp.style.background = Math.abs(pt) > LIMIT ? 'var(--danger)' : 'var(--fg)';
+      elPq.textContent = '落とすと ' + fmt(pt);
+      elPq.style.color = Math.abs(pt) > LIMIT ? 'var(--danger)' : '';
+    } else {
+      elGp.hidden = true;
+      elPq.textContent = '';
+    }
+  }
+
+  function clearRows() {
+    var n = 0, sum = 0;
+    for (var r = ROWS - 1; r >= 0; r--) {
+      var full = true;
+      for (var c = 0; c < COLS; c++) if (cols[c].length <= r) { full = false; break; }
+      if (!full) continue;
+      for (var c2 = 0; c2 < COLS; c2++) {
+        var b = cols[c2][r];
+        sum += b.w;
+        if (!reduced) {
+          for (var q = 0; q < 4; q++) {
+            parts.push({ x: PAD + c2 * CELL + CELL / 2, y: GB - (r + 0.5) * CELL,
+              vx: (Math.random() - 0.5) * 240, vy: -60 - Math.random() * 180, life: 0.7, c: COLORS[b.w] });
+          }
+        }
+        cols[c2].splice(r, 1);
+        for (var j = r; j < cols[c2].length; j++) {
+          var bb = cols[c2][j];
+          if (bb.k > 0 && bb.t0 > now()) { bb.k += 1; bb.dur = 140 + bb.k * 22; }
+          else if (!reduced) { bb.k = (bb.k > 0 ? bb.k : 0) + 1; bb.t0 = now(); bb.dur = 140 + bb.k * 22; }
+        }
+      }
+      n++;
+    }
+    return { n: n, sum: sum };
+  }
+
+  function award(res) {
+    if (res.n <= 0) return;
+    rowsCleared += res.n;
+    level = 1 + Math.floor(rowsCleared / 2);
+    var pts = addScore(100 * res.n * res.n + 10 * res.sum);
+    floater('+' + pts + (res.n > 1 ? '  ' + res.n + '列' : ''), BRASS);
+  }
+
+  function end(reason) {
+    over = true;
+    if (reason === 'tilt') {
+      target = (torque() > 0 ? 1 : -1) * COLLAPSE;
+      if (reduced) angle = target;
+    } else { setTarget(); }
+    if (score > best) { best = score; try { localStorage.setItem('tenbin-best', String(best)); } catch (e) {} }
+    $('ovTitle').textContent = reason === 'tilt' ? '天秤が傾ききった' : '置ける柱がない';
+    $('ovMsg').textContent = reason === 'tilt' ? 'トルクが ±' + LIMIT + ' を超えました。' : 'すべての柱が 9 段になりました。';
+    $('ovScore').textContent = score;
+    $('ovBest').textContent = best;
+    elOver.hidden = false; $('showRes').hidden = true;
+    hud(); gauge();
+    try { $('again').focus({ preventScroll: true }); } catch (e) {}
+  }
+
+  function tiltFail() {
+    if (Math.abs(torque()) > LIMIT) { end('tilt'); return true; }
+    return false;
+  }
+
+  function dropWind() {
+    var col = wind.col;
+    if (col < 0 || cols[col].length >= ROWS) {
+      var f = freeCols();
+      if (!f.length) return false;
+      col = f[Math.floor(Math.random() * f.length)];
+    }
+    var b = mk(wind.w, true);
+    startFall(b, ROWS - cols[col].length + 1, 300);
+    cols[col].push(b);
+    floater('風', COLORS[wind.w]);
+    return true;
+  }
+
+  function drop() {
+    if (asking) return;
+    if (over) return;
+    var c = cursor;
+    if (cols[c].length >= ROWS) { floater('満杯', DANGER); return; }
+    var p = queue.shift(); queue.push(randPiece());
+    var b = mk(p.w, false, p.t === 'b' ? -1 : 1);
+    startFall(b, ROWS - cols[c].length + 1, 0);
+    if (p.t === 'x') explode(c); else cols[c].push(b);
+
+    award(clearRows());
+    if (tiltFail()) return;
+
+    if (torque() === 0 && total() >= 6) {
+      var bn = addScore(20 * level);
+      floater('つり合い +' + bn, '#67c3a0');
+    }
+
+    windIn--;
+    if (windIn <= 0) {
+      if (!dropWind()) { end('full'); return; }
+      award(clearRows());
+      if (tiltFail()) return;
+      windIn = period(); wind = makeWind();
+    }
+    if (!freeCols().length) { end('full'); return; }
+    moves++; setTarget(); hud(); gauge();
+    if (moves % 3 === 0) showQuiz();
+  }
+
+  function move(d) {
+    if (asking) return;
+    if (over) return;
+    cursor = Math.max(0, Math.min(COLS - 1, cursor + d));
+    gauge();
+  }
+  function setCol(c) { if (over || asking) return; cursor = c; gauge(); }
+
+  /* ---------- 描画 ---------- */
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function drawBlock(x, y, w, isWind, alpha, sign, bomb) {
+    var s = CELL - 4, rad = (sign < 0 || bomb) ? s / 2 : 7;
+    ctx.save();
+    ctx.globalAlpha = alpha == null ? 1 : alpha;
+    rr(x + 2, y + 2, s, s, rad);
+    ctx.fillStyle = bomb ? '#0b121a' : sign < 0 ? BALLOON : COLORS[w];
+    ctx.fill();
+    if (bomb) { ctx.lineWidth = 3; ctx.strokeStyle = DANGER; ctx.stroke(); }
+    if (isWind) {
+      ctx.save();
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(16,26,36,.3)';
+      ctx.lineWidth = 5;
+      for (var i = -s; i < s * 2; i += 14) {
+        ctx.beginPath(); ctx.moveTo(x + 2 + i, y + 2 + s); ctx.lineTo(x + 2 + i + s, y + 2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.fillStyle = bomb ? DANGER : INK;
+    ctx.font = '700 20px ' + (bomb ? FONT_B : FONT_M);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(bomb ? '爆' : sign < 0 ? '−' + w : String(w), x + CELL / 2, y + CELL / 2 + 1);
+    ctx.restore();
+  }
+  function offY(b, t) {
+    if (!b.k) return 0;
+    var p = (t - b.t0) / b.dur;
+    if (p < 0) return null;
+    if (p >= 1) { b.k = 0; return 0; }
+    return -b.k * CELL * (1 - ease(p));
+  }
+
+  function draw(t) {
+    ctx.setTransform(K, 0, 0, K, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    // 支点
+    ctx.fillStyle = '#24384b';
+    ctx.beginPath(); ctx.moveTo(PX, PY); ctx.lineTo(PX - 46, H - 10); ctx.lineTo(PX + 46, H - 10); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = LINE; ctx.fillRect(PX - 120, H - 10, 240, 4);
+
+    ctx.save();
+    ctx.translate(PX, PY); ctx.rotate(angle); ctx.translate(-PX, -PY);
+
+    // 盤面
+    rr(PAD, TOP, COLS * CELL, ROWS * CELL, 6); ctx.fillStyle = '#111d2a'; ctx.fill();
+    for (var c = 0; c < COLS; c++) {
+      if (c % 2 === 1) { ctx.fillStyle = 'rgba(255,255,255,.025)'; ctx.fillRect(PAD + c * CELL, TOP, CELL, ROWS * CELL); }
+    }
+    ctx.strokeStyle = 'rgba(147,167,183,.09)'; ctx.lineWidth = 1;
+    for (var r = 1; r < ROWS; r++) {
+      ctx.beginPath(); ctx.moveTo(PAD, GB - r * CELL + 0.5); ctx.lineTo(PAD + COLS * CELL, GB - r * CELL + 0.5); ctx.stroke();
+    }
+    if (!over) { ctx.fillStyle = 'rgba(227,184,92,.07)'; ctx.fillRect(PAD + cursor * CELL, TOP, CELL, ROWS * CELL); }
+    ctx.save();
+    ctx.setLineDash([4, 6]); ctx.strokeStyle = 'rgba(227,184,92,.4)';
+    ctx.beginPath(); ctx.moveTo(PX, TOP); ctx.lineTo(PX, GB); ctx.stroke();
+    ctx.restore();
+
+    // ブロック
+    for (var cc = 0; cc < COLS; cc++) {
+      for (var i = 0; i < cols[cc].length; i++) {
+        var b = cols[cc][i], oy = offY(b, t);
+        if (oy === null) continue;
+        drawBlock(PAD + cc * CELL, GB - (i + 1) * CELL + oy, b.w, b.wind, 1, b.s);
+      }
+    }
+
+    // 着地位置
+    if (!over) {
+      var len = cols[cursor].length, gx = PAD + cursor * CELL;
+      if (len < ROWS) {
+        var gy = GB - (len + 1) * CELL;
+        ctx.save();
+        ctx.setLineDash([5, 4]); ctx.lineWidth = 2; ctx.strokeStyle = pieceColor(queue[0]); ctx.globalAlpha = 0.85;
+        rr(gx + 3, gy + 3, CELL - 6, CELL - 6, 7); ctx.stroke();
+        if (queue[0].t === 'x') {
+          ctx.strokeStyle = DANGER; ctx.setLineDash([]);
+          bombTargets(cursor).forEach(function (q) {
+            rr(PAD + q.c * CELL + 4, GB - (q.i + 1) * CELL + 4, CELL - 8, CELL - 8, 6); ctx.stroke();
+          });
+        }
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.strokeStyle = DANGER; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(gx + 12, TOP + 12); ctx.lineTo(gx + CELL - 12, TOP + CELL - 12);
+        ctx.moveTo(gx + CELL - 12, TOP + 12); ctx.lineTo(gx + 12, TOP + CELL - 12); ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // 風の予告
+    if (!over && wind.col >= 0) {
+      var urgent = windIn <= 1, wx = PAD + wind.col * CELL + 6, wy = TOP - 24, ww = CELL - 12;
+      ctx.save();
+      rr(wx, wy, ww, 20, 10);
+      ctx.fillStyle = urgent ? COLORS[wind.w] : 'rgba(255,255,255,.06)'; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = COLORS[wind.w]; ctx.stroke();
+      ctx.fillStyle = urgent ? INK : COLORS[wind.w];
+      ctx.font = '700 12px ' + FONT_B; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('風 ' + wind.w, wx + ww / 2, wy + 10.5);
+      ctx.restore();
+    }
+
+    // 手持ちのブロック
+    if (!over) drawBlock(PAD + curX * CELL, 10, queue[0].w, false, 0.95, queue[0].t === 'b' ? -1 : 1, queue[0].t === 'x');
+
+    // 粒子
+    for (var p = 0; p < parts.length; p++) {
+      var pt = parts[p];
+      ctx.globalAlpha = Math.max(0, pt.life / 0.7);
+      ctx.fillStyle = pt.c;
+      ctx.fillRect(pt.x - 3, pt.y - 3, 6, 6);
+    }
+    ctx.globalAlpha = 1;
+
+    // 台
+    ctx.fillStyle = '#c9a35a';
+    rr(PAD - 12, GB, COLS * CELL + 24, BEAM, 4); ctx.fill();
+    ctx.fillStyle = '#2a1f08';
+    ctx.font = '700 11px ' + FONT_M; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (var k = 0; k < COLS; k++) ctx.fillText(k - MID === 0 ? '0' : fmt(k - MID), PAD + k * CELL + CELL / 2, GB + BEAM / 2 + 1);
+
+    ctx.restore();
+
+    // 浮かぶ文字
+    floaters = floaters.filter(function (f) { return t - f.t0 < 1100; });
+    for (var f = 0; f < floaters.length; f++) {
+      var fl = floaters[f], pr = (t - fl.t0) / 1100;
+      ctx.save();
+      ctx.globalAlpha = 1 - pr * pr;
+      ctx.font = '700 20px ' + FONT_B; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 5; ctx.strokeStyle = INK; ctx.lineJoin = 'round';
+      ctx.strokeText(fl.text, fl.x, fl.y - 34 * pr);
+      ctx.fillStyle = fl.color;
+      ctx.fillText(fl.text, fl.x, fl.y - 34 * pr);
+      ctx.restore();
+    }
+  }
+
+  function frame(t) {
+    var dt = Math.min(0.05, (t - (lastT || t)) / 1000);
+    lastT = t;
+    angle += (target - angle) * (1 - Math.exp(-dt * 7));
+    curX += (cursor - curX) * (reduced ? 1 : (1 - Math.exp(-dt * 30)));
+    for (var i = parts.length - 1; i >= 0; i--) {
+      var p = parts[i];
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 520 * dt; p.life -= dt;
+      if (p.life <= 0) parts.splice(i, 1);
+    }
+    draw(t);
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- 入力 ---------- */
+  function colAt(e) {
+    var r = cv.getBoundingClientRect(), s = W / r.width;
+    var x = (e.clientX - r.left) * s, y = (e.clientY - r.top) * s;
+    var dx = x - PX, dy = y - PY, cs = Math.cos(-angle), sn = Math.sin(-angle);
+    var ux = dx * cs - dy * sn + PX;
+    return Math.max(0, Math.min(COLS - 1, Math.floor((ux - PAD) / CELL)));
+  }
+  cv.addEventListener('pointerdown', function (e) {
+    if (over) return;
+    pressing = true;
+    setCol(colAt(e));
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  cv.addEventListener('pointermove', function (e) {
+    if (over) return;
+    if (e.pointerType === 'mouse' || pressing) setCol(colAt(e));
+  });
+  cv.addEventListener('pointerup', function (e) {
+    if (!pressing) return;
+    pressing = false;
+    var r = cv.getBoundingClientRect();
+    var inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    setCol(colAt(e));
+    if (inside) drop();
+  });
+  cv.addEventListener('pointercancel', function () { pressing = false; });
+
+  window.addEventListener('keydown', function (e) {
+    var tg = e.target;
+    if (tg && /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName)) return;
+    var k = e.key;
+    if (gameEl.hidden) {
+      if (!homeEl.hidden && (k === 'Enter' || k === ' ') && !(tg && tg.closest && tg.closest('button'))) { e.preventDefault(); showGame(true); }
+      return;
+    }
+    if (asking) { if (qPhase === 'ask' && /^[1-4]$/.test(k)) answer(+k - 1); return; }
+    if (k === ' ' || k === 'Enter') {
+      if (tg && tg.closest && tg.closest('button')) return;
+      e.preventDefault(); drop(); return;
+    }
+    if (k === 'ArrowLeft' || k === 'a' || k === 'A') { e.preventDefault(); move(-1); }
+    else if (k === 'ArrowRight' || k === 'd' || k === 'D') { e.preventDefault(); move(1); }
+    else if (k === 'ArrowDown') { e.preventDefault(); drop(); }
+    else if (k === 'r' || k === 'R') { newGame(); }
+    else if (/^[1-9]$/.test(k)) { setCol(+k - 1); }
+  });
+  $('bl').addEventListener('click', function () { move(-1); });
+  $('br').addEventListener('click', function () { move(1); });
+  $('bd').addEventListener('click', drop);
+  $('again').addEventListener('click', newGame);
+  $('peek').addEventListener('click', function () { elOver.hidden = true; $('showRes').hidden = false; try { $('showRes').focus({ preventScroll: true }); } catch (e) {} });
+  $('showRes').addEventListener('click', function () { elOver.hidden = false; $('showRes').hidden = true; try { $('again').focus({ preventScroll: true }); } catch (e) {} });
+  qChoices.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button') : null;
+    if (b && !b.disabled) answer(+b.dataset.i);
+  });
+  qNext.addEventListener('click', closeQuiz);
+
+  function showHome() {
+    elHomeBest.textContent = Math.max(best, score);
+    elResume.hidden = !(!over && moves > 0);
+    setView(homeEl);
+    try { window.scrollTo(0, 0); } catch (err) {}
+    try { elStart.focus({ preventScroll: true }); } catch (err) {}
+  }
+  function showGame(fresh) {
+    if (fresh) newGame();
+    setView(gameEl);
+    try { window.scrollTo(0, 0); } catch (err) {}
+    try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (err) {}
+  }
+  elStart.addEventListener('click', function () { showGame(true); });
+  elResume.addEventListener('click', function () { showGame(false); });
+  $('homeBtn').addEventListener('click', showHome);
+  $('toHome').addEventListener('click', showHome);
+
+  function setView(v) {
+    [homeEl, gameEl, howEl, vocabEl].forEach(function (el) { el.hidden = el !== v; });
+    document.body.classList.toggle('gaming', v === gameEl);
+    if (v === gameEl) { setVh(); fit(); requestAnimationFrame(fit); }
+  }
+  function renderVocab() {
+    var list = WORDS.slice().sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
+    var ng = list.filter(function (w) { var s = vstate[w[0]]; return s && s.last === 'ng'; });
+    var seen = list.filter(function (w) { return vstate[w[0]]; }).length;
+    var rows = vFilter === 'ng' ? ng : list;
+    $('vCount').textContent = '出題済み ' + seen + ' / ' + list.length + ' 語、要復習 ' + ng.length + ' 語';
+    $('vAll').className = vFilter === 'all' ? 'on' : '';
+    $('vNg').className = vFilter === 'ng' ? 'on' : '';
+    $('vAll').setAttribute('aria-pressed', vFilter === 'all' ? 'true' : 'false');
+    $('vNg').setAttribute('aria-pressed', vFilter === 'ng' ? 'true' : 'false');
+    var box = $('vList');
+    box.textContent = '';
+    box.classList.toggle('hide-ja', $('vHide').checked);
+    if (!rows.length) {
+      var p = document.createElement('div');
+      p.className = 'v-empty';
+      p.textContent = '要復習の単語はありません。クイズでまちがえた単語がここに入ります。';
+      box.appendChild(p);
+      return;
+    }
+    rows.forEach(function (w) {
+      var s = vstate[w[0]];
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'v-row';
+      var en = document.createElement('span'); en.className = 'v-en'; en.textContent = w[0];
+      var ja = document.createElement('span'); ja.className = 'v-ja'; ja.textContent = w[1];
+      var st = document.createElement('span'); st.className = 'v-st';
+      st.textContent = s ? '○' + s.r + ' ×' + s.w : '—';
+      if (s && s.last === 'ng') st.classList.add('ng');
+      b.appendChild(en); b.appendChild(ja); b.appendChild(st);
+      b.addEventListener('click', function () { b.classList.toggle('shown'); });
+      box.appendChild(b);
+    });
+  }
+  $('howBtn').addEventListener('click', function () { setView(howEl); try { window.scrollTo(0, 0); } catch (err) {} });
+  $('vocabBtn').addEventListener('click', function () { renderVocab(); setView(vocabEl); try { window.scrollTo(0, 0); } catch (err) {} });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-home]'), function (b) { b.addEventListener('click', showHome); });
+  $('vAll').addEventListener('click', function () { vFilter = 'all'; renderVocab(); });
+  $('vNg').addEventListener('click', function () { vFilter = 'ng'; renderVocab(); });
+  $('vHide').addEventListener('change', renderVocab);
+
+  setVh();
+  window.addEventListener('resize', function () { setVh(); fit(); });
+  window.addEventListener('orientationchange', function () { setTimeout(function () { setVh(); fit(); }, 250); });
+  if (window.ResizeObserver) { new ResizeObserver(function () { requestAnimationFrame(fit); }).observe(cv.parentNode); }
+  newGame();
+  showHome();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
