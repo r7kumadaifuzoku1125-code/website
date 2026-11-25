@@ -1,6 +1,22 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--
+  天秤ブロック(Firebase ランキング対応版)
+
+  ランキングを Firebase(Cloud Firestore)に保存するには:
+  1. Firebase コンソールでプロジェクトを作り、「Firestore Database」を作成します。
+  2. 「プロジェクトの設定 > マイアプリ」でウェブアプリを追加し、表示された firebaseConfig を、
+     このファイルのスクリプトの先頭にある FIREBASE_CONFIG に貼ります(apiKey と projectId が必須です)。
+  3. Firestore の「ルール」に、同梱の firestore.rules の内容を貼って公開します。
+  4. ファイルをウェブサイトなどに置いて開きます。FIREBASE_CONFIG が空のままなら、ランキングは使えません。
+
+  保存先は、コレクション scores のドキュメント(ID は 4 桁の番号)です。
+  firebaseConfig の値は画面から見える情報なので、守るのはルールです。ルールを必ず設定してください。
+-->
 <title>天秤ブロック</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Shippori+Mincho+B1:wght@700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
 <style>
 /* 構成: 左にゲーム盤(ゲージ→盤面→操作)、右にルール。盤面は天秤の台ごと傾く。単一の暗い配色で通す。 */
@@ -139,6 +155,7 @@ body.gaming{padding-block:12px}
   #gameView .head h1{font-size:24px;margin:0}
   #gameView .head .sub{display:none}
   #gameView .home-link{margin:0}
+  #gameView .who{margin-left:auto}
   #gameView .layout{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);align-items:stretch;gap:0}
   #gameView .rules{display:none}
   #gameView .game{min-height:0;display:grid;gap:10px 18px}
@@ -165,20 +182,50 @@ body.gaming{padding-block:12px}
   .q-choices button{min-height:38px}
   .quiz{gap:6px;padding:12px}
 }
+.id-field{margin-top:22px;max-width:30em}
+.id-field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+.id-field input{width:9em;min-height:56px;padding:0 14px;font:700 28px var(--font-mono);letter-spacing:.35em;text-indent:.35em;text-align:center;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.id-field input::placeholder{color:var(--line)}
+.id-field input:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.id-field input.ok{border-color:var(--ok)}
+.id-hint{margin:6px 0 0;font-size:13px;color:var(--muted);min-height:1.5em}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:disabled:hover{background:var(--panel2)}
+button.main:disabled:hover{background:var(--brass)}
+.who{display:block;font-size:13px;color:var(--muted)}
+.over .rank-note{margin:0 auto;max-width:26em;font-size:13px;color:var(--muted);text-wrap:pretty}
+.rk-list{max-width:42em;border-bottom:1px solid var(--line)}
+.r-row{display:grid;grid-template-columns:2.6em minmax(0,1fr) auto 7em;gap:10px;align-items:center;min-height:50px;padding:8px 6px;border-top:1px solid var(--line)}
+.r-row.me{background:rgba(227,184,92,.12)}
+.r-rank{font-family:var(--font-mono);font-weight:700;color:var(--muted)}
+.r-rank.top{color:var(--brass)}
+.r-num{font-family:var(--font-mono);font-weight:700;font-size:20px;letter-spacing:.12em}
+.r-you{margin-left:8px;font-family:var(--font-body);font-size:11px;font-weight:400;letter-spacing:0;color:var(--brass)}
+.r-score{font-family:var(--font-mono);font-weight:700;font-size:20px;text-align:right}
+.r-meta{font-family:var(--font-mono);font-size:12px;color:var(--muted);text-align:right}
 @media (prefers-reduced-motion:reduce){.fill,.pre{transition:none}}
 </style>
 
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
 <main class="wrap" id="home">
   <div class="home-grid">
     <div class="home-copy">
       <h1 class="home-title">天秤ブロック</h1>
       <p class="home-lead">柱に重りを落として、台を傾けすぎないまま横一列をそろえます。3 手ごとの英単語クイズに正解すると、スコア倍率が上がります。</p>
+      <div class="id-field">
+        <label for="pnum">プレイヤー番号(4 桁)</label>
+        <input id="pnum" type="text" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="0000" enterkeyhint="go" aria-describedby="pnumHint">
+        <p class="id-hint" id="pnumHint"></p>
+      </div>
       <div class="home-best"><span class="k">ベスト</span><b class="mono" id="homeBest">0</b></div>
       <div class="actions">
-        <button class="main big" id="start" type="button">はじめる</button>
+        <button class="main big" id="start" type="button" disabled>はじめる</button>
         <button class="big" id="resume" type="button" hidden>つづきから</button>
         <button class="big" id="howBtn" type="button">あそびかた</button>
         <button class="big" id="vocabBtn" type="button">単語帳</button>
+        <button class="big" id="rankBtn" type="button">ランキング</button>
       </div>
       <dl class="rule-list home-how">
         <div><dt>落とす</dt><dd>重さ 1〜6 のブロックを 9 本の柱のどれかへ。</dd></div>
@@ -194,6 +241,7 @@ body.gaming{padding-block:12px}
   <header class="head">
     <button type="button" class="home-link" id="homeBtn">← ホームへ</button>
     <h1>天秤ブロック</h1>
+    <span class="who mono" id="who"></span>
     <p class="sub">重さのちがうブロックを柱に落とします。台が傾ききる前に、横一列をそろえましょう。</p>
   </header>
   <div class="layout">
@@ -223,7 +271,8 @@ body.gaming{padding-block:12px}
           <h2 id="ovTitle">崩壊</h2>
           <p id="ovMsg"></p>
           <div class="res"><div><span>スコア</span><b id="ovScore">0</b></div><div><span>ベスト</span><b id="ovBest">0</b></div></div>
-          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="main" id="again" type="button">もう一度</button><button id="toHome" type="button">ホームへ</button><button id="peek" type="button">盤面を見る</button></div>
+          <p class="rank-note" id="ovRank" aria-live="polite"></p>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="main" id="again" type="button">もう一度</button><button id="toHome" type="button">ホームへ</button><button id="toRank" type="button">ランキング</button><button id="peek" type="button">盤面を見る</button></div>
         </div>
       </div>
       <div class="pad">
@@ -243,7 +292,7 @@ body.gaming{padding-block:12px}
         <div><dt>風</dt><dd>数手ごとに、しま模様の風ブロックが柱の上に予告された位置へ落ちます。レベルが上がると間隔が縮みます。</dd></div>
         <div><dt>つり合い</dt><dd>落としたあとトルクがちょうど 0 で、ブロックが 6 個以上あればボーナスが入ります。</dd></div>
         <div><dt>特殊ブロック</dt><dd>丸い銀色の浮き球は逆向きに効くので、傾きを戻したいときに使えます。「爆」は着地した場所の下と左右のブロックを消します。どちらもたまに次のブロックに混じります。</dd></div>
-        <div><dt>英単語クイズ</dt><dd>3 手ごとに英単語の 4 択問題が出ます。正解で +50 点が入り、スコア倍率が 10% ずつ上がります(×1.1、×1.2…)。倍率はそれ以降のすべての得点にかかります。上限は ×3.0 で、上限に達してからは正解のたびに基本点が 500 点になり、倍率がかかって 1500 点が入ります。まちがえると風が 1 手早く来ます。選択肢は <kbd>1</kbd>〜<kbd>4</kbd> でも選べます。</dd></div>
+        <div><dt>英単語クイズ</dt><dd>3 手ごとに英単語の 4 択問題が出ます。正解で +50 点が入り、スコア倍率が 10% ずつ上がります(×1.1、×1.2…)。倍率はそれ以降のすべての得点にかかります。上限は ×3.0 で、上限に達してからは、正解のたびに倍率をかけたあとで 1000 点が入ります。まちがえると風が 1 手早く来ます。選択肢は <kbd>1</kbd>〜<kbd>4</kbd> でも選べます。</dd></div>
       </dl>
       <div class="legend" aria-label="重さの色">
         <span><i class="chip c1">1</i>軽い</span><span><i class="chip c2">2</i></span><span><i class="chip c3">3</i></span><span><i class="chip c4">4</i></span><span><i class="chip c5">5</i></span><span><i class="chip c6">6</i>重い</span><span><i class="chip cb">−2</i>浮き球</span><span><i class="chip cx">爆</i>爆弾</span>
@@ -283,7 +332,7 @@ body.gaming{padding-block:12px}
     </ul>
 
     <h2>英単語クイズ</h2>
-    <p>3 手ごとに、英単語の 4 択問題が出ます。正解すると +50 点が入り、スコア倍率が 0.1 上がります。倍率は ×3.0 が上限で、上限に達してからは、正解のたびに基本点が 500 点になります(倍率がかかって 1500 点)。不正解のときは、風が 1 手早く来ます。</p>
+    <p>3 手ごとに、英単語の 4 択問題が出ます。正解すると +50 点が入り、スコア倍率が 0.1 上がります。倍率は ×3.0 が上限で、上限に達してからは、正解のたびに倍率をかけたあとで 1000 点が入ります。不正解のときは、風が 1 手早く来ます。</p>
     <p>答えた結果は単語帳に記録されます。</p>
 
     <h2>得点</h2>
@@ -293,11 +342,16 @@ body.gaming{padding-block:12px}
           <tr><th>列を消す</th><td class="mono">100 × 列数 × 列数 + 10 × 消えた重さの合計</td></tr>
           <tr><th>爆弾</th><td class="mono">10 × 消えた重さの合計</td></tr>
           <tr><th>つり合い</th><td><span class="mono">20 × レベル</span>(落としたあとトルクがちょうど 0 で、ブロックが 6 個以上のとき)</td></tr>
-          <tr><th>英単語クイズ</th><td><span class="mono">50</span>(倍率が上限に達してからは <span class="mono">500</span>)</td></tr>
+          <tr><th>英単語クイズ</th><td><span class="mono">50</span>(倍率が上限に達してからは、倍率をかけたあとで <span class="mono">1000</span>)</td></tr>
         </tbody>
       </table>
     </div>
-    <p>表の点数はすべて基本点で、そのときのスコア倍率がかかります。</p>
+    <p>表の点数は、倍率をかける前の基本点です(上限後のクイズだけは、倍率をかけたあとの点数です)。</p>
+
+    <h2>プレイヤー番号とランキング</h2>
+    <p>ホームで 4 桁の番号を入れてからはじめます。この番号がランキングでの名前です。入れた番号はこの端末に残るので、次からは入力しなくても使えます。同じ端末を何人かで使うときは、人ごとに別の番号を使ってください。</p>
+    <p>公開ページで開いているときは、ゲームオーバーになると、番号ごとのベストスコアがランキング(上位 30 件)に登録されます。自分のベストを超えたときだけ更新されます。</p>
+    <p>共有ランキングへ登録できるのは、このページの編集権限(コントリビューター以上)をもらっている人です。閲覧のみの人は、順位を見ることだけできます。番号に本人確認はないので、同じ番号を別の人が使うと、同じ記録として扱われます。</p>
 
     <h2>操作</h2>
     <p><kbd>←</kbd> <kbd>→</kbd> または <kbd>1</kbd>〜<kbd>9</kbd> で柱を選び、<kbd>Space</kbd> か <kbd>↓</kbd> で落とします。<kbd>R</kbd> でやり直しです。マウスでは盤面をクリックすると落ち、タッチでは指で狙って離すと落ちます。盤面の下のボタンでも操作できます。クイズの選択肢は <kbd>1</kbd>〜<kbd>4</kbd> でも選べます。</p>
@@ -320,9 +374,32 @@ body.gaming{padding-block:12px}
   <div class="v-list" id="vList"></div>
 </main>
 
+<main class="wrap" id="rankView" hidden>
+  <header class="head">
+    <button type="button" class="home-link" data-home>← ホームへ</button>
+    <h1>ランキング</h1>
+    <p class="sub">プレイヤー番号(4 桁)が名前です。ランキングは番号ごとのベストスコアです。</p>
+  </header>
+  <p class="muted v-count" id="rkNote"></p>
+  <div class="rk-list" id="rkList"></div>
+</main>
+
 <script>
 (function () {
   'use strict';
+
+  /* ===== Firebase の設定(ランキング用) =====
+     Firebase コンソールの「プロジェクトの設定 > マイアプリ(ウェブ)」にある firebaseConfig の中身を、ここに貼ります。
+     apiKey と projectId が入っていると、ランキングは Firebase(Cloud Firestore)に保存されます。
+     空のままなら Firebase は使いません。 */
+  var FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyDjQP3dySDhjYs3XgXdP2980KuaBjL9rI8',
+    authDomain: 'tenbin-block.firebaseapp.com',
+    projectId: 'tenbin-block',
+    storageBucket: 'tenbin-block.firebasestorage.app',
+    messagingSenderId: '456066972748',
+    appId: '1:456066972748:web:61faac4c71b55fb073c8e9'
+  };
   var COLS = 9, ROWS = 9, CELL = 44, PAD = 52, TOP = 96, LIMIT = 18, MID = 4;
   var W = COLS * CELL + PAD * 2, GB = TOP + ROWS * CELL, BEAM = 20, PY = GB + BEAM, H = PY + 84, PX = W / 2;
   var MAXT = 5 * Math.PI / 180, COLLAPSE = 18 * Math.PI / 180;
@@ -357,7 +434,7 @@ body.gaming{padding-block:12px}
   var elTq = $('tq'), elPq = $('pq'), elGf = $('gf'), elGp = $('gp'), elQueue = $('queue');
   var elOver = $('over');
   var elQin = $('qin'), elMult = $('mult'), quizEl = $('quiz'), qWord = $('qWord'), qChoices = $('qChoices'), qResult = $('qResult'), qNext = $('qNext');
-  var homeEl = $('home'), gameEl = $('gameView'), howEl = $('howView'), vocabEl = $('vocabView'), elStart = $('start'), elResume = $('resume'), elHomeBest = $('homeBest');
+  var homeEl = $('home'), gameEl = $('gameView'), howEl = $('howView'), vocabEl = $('vocabView'), rankEl = $('rankView'), elStart = $('start'), elResume = $('resume'), elHomeBest = $('homeBest');
   var moves = 0, multT = 10, asking = false, qPhase = '', qCorrect = 0, qAnswer = '', qEn = '', qRight = false, qGain = 0, quizBag = [];
 
   var cols, queue, score, best = 0, rowsCleared, level, windIn, wind, over, cursor, curX, angle, target;
@@ -463,10 +540,10 @@ body.gaming{padding-block:12px}
     if (i === qCorrect) {
       qRight = true;
       var wasCap = multT >= 30;
-      if (wasCap) { qGain = addScore(500); } else { qGain = addScore(50); multT += 1; }
+      if (wasCap) { qGain = addScore(1000 / (multT / 10)); } else { qGain = addScore(50); multT += 1; }
       qResult.textContent = wasCap
-        ? '正解。基本点 500 に倍率 ×3.0 がかかって +' + qGain + ' 点。'
-        : '正解。+' + qGain + ' 点。倍率が ×' + (multT / 10).toFixed(1) + ' に上がりました。' + (multT >= 30 ? ' 上限です。以後の正解は基本点 500(倍率がかかって 1500 点)。' : '');
+        ? '正解。倍率 ×3.0 をかけたあとで +' + qGain + ' 点。'
+        : '正解。+' + qGain + ' 点。倍率が ×' + (multT / 10).toFixed(1) + ' に上がりました。' + (multT >= 30 ? ' 上限です。以後の正解は、倍率をかけたあとで 1000 点です。' : '');
     } else {
       var msg = '不正解。答えは「' + qAnswer + '」。';
       if (windIn > 1) { windIn--; msg += ' 風が 1 手早く来ます。'; }
@@ -557,7 +634,7 @@ body.gaming{padding-block:12px}
     queue = [normal(), normal(), normal()];
     score = 0; rowsCleared = 0; level = 1; windIn = period(); wind = makeWind();
     over = false; cursor = MID; curX = MID; floaters = []; parts = [];
-    elOver.hidden = true; $('showRes').hidden = true;
+    elOver.hidden = true; $('showRes').hidden = true; lastSub = null;
     quizEl.hidden = true; asking = false; qPhase = ''; moves = 0; multT = 10;
     setTarget(); angle = target;
     hud(); gauge();
@@ -649,6 +726,7 @@ body.gaming{padding-block:12px}
     $('ovMsg').textContent = reason === 'tilt' ? 'トルクが ±' + LIMIT + ' を超えました。' : 'すべての柱が 9 段になりました。';
     $('ovScore').textContent = score;
     $('ovBest').textContent = best;
+    saveRun();
     elOver.hidden = false; $('showRes').hidden = true;
     hud(); gauge();
     try { $('again').focus({ preventScroll: true }); } catch (e) {}
@@ -943,7 +1021,12 @@ body.gaming{padding-block:12px}
     try { elStart.focus({ preventScroll: true }); } catch (err) {}
   }
   function showGame(fresh) {
-    if (fresh) newGame();
+    if (fresh) {
+      if (!validNum(pnumEl.value)) { try { pnumEl.focus(); } catch (err) {} return; }
+      player = pnumEl.value;
+      $('who').textContent = '番号 ' + player;
+      newGame();
+    }
     setView(gameEl);
     try { window.scrollTo(0, 0); } catch (err) {}
     try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (err) {}
@@ -953,8 +1036,202 @@ body.gaming{padding-block:12px}
   $('homeBtn').addEventListener('click', showHome);
   $('toHome').addEventListener('click', showHome);
 
+  /* ---------- プレイヤー番号・記録・ランキング ---------- */
+  var PNUM_KEY = 'tenbin-pnum';
+  var pnumEl = $('pnum'), pnumHint = $('pnumHint');
+  var player = '', dbRef = null, sharedRows = [], sharedStatus = 'none', sharedTimer = null, lastSub = null, fbError = false;
+  function validNum(v) { return /^[0-9]{4}$/.test(v || ''); }
+  try { var pn = localStorage.getItem(PNUM_KEY); if (validNum(pn)) player = pn; } catch (err) {}
+  try { localStorage.removeItem('tenbin-runs'); } catch (err) {}
+
+  function syncStart() {
+    var ok = validNum(pnumEl.value);
+    elStart.disabled = !ok;
+    pnumEl.classList.toggle('ok', ok);
+    pnumHint.textContent = (ok ? 'この番号で記録します。' : '4 桁の数字を入れてください。') + 'ランキングではこの番号が名前になります。';
+  }
+  pnumEl.addEventListener('input', function () {
+    var v = pnumEl.value.replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).replace(/[^0-9]/g, '').slice(0, 4);
+    if (v !== pnumEl.value) pnumEl.value = v;
+    if (validNum(v)) { try { localStorage.setItem(PNUM_KEY, v); } catch (err) {} }
+    syncStart();
+  });
+  pnumEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); if (validNum(pnumEl.value)) showGame(true); }
+  });
+  pnumEl.value = player; syncStart();
+
+  function fmtDate(ts) {
+    if (!ts) return '';
+    var d = new Date(ts);
+    return isNaN(d.getTime()) ? '' : (d.getMonth() + 1) + '/' + d.getDate();
+  }
+  function rankOf(num) {
+    var me = null;
+    sharedRows.forEach(function (r) { if (r.num === num) me = r; });
+    if (!me) return 0;
+    return 1 + sharedRows.filter(function (r) { return r.best > me.best; }).length;
+  }
+
+  function renderOverNote() {
+    var el = $('ovRank');
+    if (!lastSub) { el.textContent = ''; return; }
+    var s = lastSub, t = [];
+    if (s.zero) { el.textContent = 'スコアが 0 なので、記録はしません。'; return; }
+    var st = s.shared, n = s.rec.num;
+    if (st === 'sending') t.push('みんなのランキングへ送信中…');
+    else if (st === 'saved') {
+      var r = rankOf(n);
+      if (r) t.push('みんなのランキングで ' + r + ' 位(番号 ' + n + ')。');
+      else if (sharedStatus === 'ready' && sharedRows.length >= 30) t.push('みんなのランキングに登録しました(上位 30 位の外)。');
+      else t.push('みんなのランキングに登録しました(番号 ' + n + ')。');
+    }
+    else if (st === 'kept') t.push('番号 ' + n + ' の自己ベスト ' + s.prevBest + ' に届かなかったので、みんなのランキングはそのままです。');
+    else if (st === 'denied') t.push('登録する権限がないため、ランキングには登録できません。');
+    else if (st === 'error') t.push('みんなのランキングへ送信できませんでした。');
+    else t.push(fbError ? 'Firebase に接続できなかったので、ランキングには登録できません。' : 'ランキングに登録するには、公開ページで開くか、Firebase を設定してください。');
+    el.textContent = t.join(' ');
+  }
+
+  function saveRun() {
+    if (score <= 0) { lastSub = { zero: true }; renderOverNote(); return; }
+    var rec = { num: player, score: score, level: level, at: Date.now() };
+    var sub = { rec: rec, shared: dbRef ? 'sending' : 'none', prevBest: 0 };
+    lastSub = sub;
+    renderOverNote();
+    if (!dbRef) return;
+    var ref;
+    try { ref = dbRef.doc('scores/' + rec.num); } catch (err) { sub.shared = 'error'; renderOverNote(); return; }
+    ref.get().then(function (snap) {
+      var d = snap.exists ? snap.data() : null;
+      var prev = d && isFinite(d.best) ? +d.best : 0;
+      if (d && prev >= rec.score) { sub.shared = 'kept'; sub.prevBest = prev; return; }
+      return ref.set({ num: rec.num, best: rec.score, level: rec.level, at: rec.at }).then(function () { sub.shared = 'saved'; });
+    }).catch(function (e) {
+      sub.shared = e && e.code === 'invalid_argument' ? 'denied' : 'error';
+    }).then(function () { if (lastSub === sub) renderOverNote(); });
+  }
+
+  function startShared(d) {
+    try {
+      dbRef = d; sharedStatus = 'loading';
+      sharedTimer = setTimeout(function () { if (sharedStatus === 'loading') { sharedStatus = 'slow'; renderRank(); } }, 10000);
+      d.collection('scores').orderBy('best', 'desc').limit(30).onSnapshot(function (snap) {
+        var rows = [];
+        snap.docs.forEach(function (doc) {
+          var v = doc.data() || {}, n = String(doc.id), b = Number(v.best);
+          if (!validNum(n) || !isFinite(b) || b <= 0) return;
+          rows.push({ num: n, best: Math.min(b, 1e9), level: Math.max(1, Math.min(999, Math.floor(Number(v.level)) || 1)), at: Number(v.at) || 0 });
+        });
+        rows.sort(function (a, b) { return b.best - a.best || a.at - b.at; });
+        sharedRows = rows;
+        if (!snap.metadata.fromCache) { sharedStatus = 'ready'; clearTimeout(sharedTimer); }
+        if (!rankEl.hidden) renderRank();
+        if (lastSub) renderOverNote();
+      }, function () {
+        sharedStatus = 'error'; clearTimeout(sharedTimer);
+        if (!rankEl.hidden) renderRank();
+      });
+    } catch (err) { dbRef = null; sharedStatus = 'none'; }
+  }
+
+  function renderRank() {
+    var box = $('rkList'), note = $('rkNote');
+    var rows = sharedRows, status = '', empty = 'まだ記録がありません。ゲームオーバーまで遊ぶと、ここに載ります。';
+    var base = 'みんなのランキング(番号ごとのベストスコア、上位 30 件)';
+    if (!dbRef) { rows = []; empty = fbError ? 'Firebase に接続できませんでした。firebaseConfig の設定とネット接続を確認してください。' : 'ランキングはまだ使えません。公開ページで開くか、Firebase を設定してください。'; }
+    else if (sharedStatus === 'loading') { status = '読み込み中…'; empty = '読み込み中…'; }
+    else if (sharedStatus === 'slow') { status = '共有データにまだ接続できていません。表示が古い場合があります。'; empty = '共有データにまだ接続できていません。'; }
+    else if (sharedStatus === 'error') { status = '共有データを読み込めませんでした。'; empty = '共有データを読み込めませんでした。'; }
+    note.textContent = status || base;
+    box.textContent = '';
+    if (!rows.length) {
+      var em = document.createElement('div'); em.className = 'v-empty'; em.textContent = empty; box.appendChild(em); return;
+    }
+    var me = validNum(pnumEl.value) ? pnumEl.value : player;
+    rows.forEach(function (r, i) {
+      var rank = 1 + rows.filter(function (x) { return x.best > r.best; }).length;
+      var row = document.createElement('div'); row.className = 'r-row' + (r.num === me ? ' me' : '');
+      var a = document.createElement('span'); a.className = 'r-rank' + (rank <= 3 ? ' top' : ''); a.textContent = String(rank);
+      var b = document.createElement('span'); b.className = 'r-num'; b.textContent = r.num;
+      if (r.num === me) { var y = document.createElement('span'); y.className = 'r-you'; y.textContent = 'あなた'; b.appendChild(y); }
+      var c = document.createElement('span'); c.className = 'r-score'; c.textContent = String(r.best);
+      var d = document.createElement('span'); d.className = 'r-meta'; d.textContent = 'Lv' + r.level + (fmtDate(r.at) ? ' · ' + fmtDate(r.at) : '');
+      row.appendChild(a); row.appendChild(b); row.appendChild(c); row.appendChild(d);
+      box.appendChild(row);
+    });
+  }
+  function openRank() { renderRank(); setView(rankEl); try { window.scrollTo(0, 0); } catch (err) {} }
+  $('rankBtn').addEventListener('click', openRank);
+  $('toRank').addEventListener('click', openRank);
+  /* Firebase(Cloud Firestore)を、上のランキング処理がそのまま使える形に包みます。 */
+  function makeFirestoreAdapter(fs, db) {
+    function wrapErr(e) {
+      return { code: e && e.code === 'permission-denied' ? 'invalid_argument' : ((e && e.code) || 'error'), message: e && e.message };
+    }
+    return {
+      doc: function (path) {
+        var parts = path.split('/'), ref = fs.doc(db, parts[0], parts[1]);
+        return {
+          get: function () {
+            return fs.getDoc(ref).then(function (snap) {
+              return { exists: snap.exists(), data: function () { return snap.data(); } };
+            }, function (e) { throw wrapErr(e); });
+          },
+          set: function (data) { return fs.setDoc(ref, data).catch(function (e) { throw wrapErr(e); }); }
+        };
+      },
+      collection: function (name) {
+        var col = fs.collection(db, name), order = null, lim = 0;
+        var q = {
+          orderBy: function (field, dir) { order = [field, dir]; return q; },
+          limit: function (n) { lim = n; return q; },
+          onSnapshot: function (next, err) {
+            var cs = [col];
+            if (order) cs.push(fs.orderBy(order[0], order[1]));
+            if (lim) cs.push(fs.limit(lim));
+            return fs.onSnapshot(fs.query.apply(null, cs), next, err);
+          }
+        };
+        return q;
+      }
+    };
+  }
+function initFirebase() {
+  var c = FIREBASE_CONFIG;
+  if (!c || !c.apiKey || !c.projectId) return Promise.resolve(null);
+
+  var base = 'https://www.gstatic.com/firebasejs/10.14.1/';
+
+  return Promise.all([
+    import(base + 'firebase-app.js'),
+    import(base + 'firebase-firestore.js'),
+    import(base + 'firebase-auth.js')
+  ]).then(function (m) {
+    var app = m[0].initializeApp(c);
+    var auth = m[2].getAuth(app);
+
+    return m[2].signInAnonymously(auth).then(function () {
+      return makeFirestoreAdapter(m[1], m[1].getFirestore(app));
+    });
+  });
+}
+  function useArtifactDb() {
+    try {
+      if (window.claude && typeof window.claude.use === 'function') {
+        window.claude.use('db').then(function (d) { if (d) startShared(d); }, function () {});
+      }
+    } catch (err) {}
+  }
+  initFirebase().then(function (adapter) {
+    if (adapter) startShared(adapter); else useArtifactDb();
+  }, function () {
+    fbError = true;
+    useArtifactDb();
+  });
+
   function setView(v) {
-    [homeEl, gameEl, howEl, vocabEl].forEach(function (el) { el.hidden = el !== v; });
+    [homeEl, gameEl, howEl, vocabEl, rankEl].forEach(function (el) { el.hidden = el !== v; });
     document.body.classList.toggle('gaming', v === gameEl);
     if (v === gameEl) { setVh(); fit(); requestAnimationFrame(fit); }
   }
@@ -1009,4 +1286,5 @@ body.gaming{padding-block:12px}
 })();
 </script>
 
-</body></html>
+</body>
+</html>
