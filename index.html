@@ -468,12 +468,20 @@ button.main:disabled:hover{background:var(--brass)}
     ['whisper', 'ささやく'], ['wisdom', '知恵'], ['weight', '重さ']
   ];
   var vstate = {}, vFilter = 'all';
-  try { vstate = JSON.parse(localStorage.getItem('tenbin-vocab') || '{}') || {}; } catch (err) { vstate = {}; }
+  /* 単語帳の学習記録は、プレイヤー番号ごとに別のlocalStorageキーへ保存します。 */
+  function getVocabKey() {
+    var num = validNum(player) ? player : (pnumEl && validNum(pnumEl.value) ? pnumEl.value : '0000');
+    return 'tenbin-vocab_' + num;
+  }
+  function loadVocab() {
+    try { vstate = JSON.parse(localStorage.getItem(getVocabKey()) || '{}') || {}; }
+    catch (err) { vstate = {}; }
+  }
   function recordWord(en, ok) {
     var s = vstate[en] || (vstate[en] = { r: 0, w: 0, last: '' });
     if (ok) s.r++; else s.w++;
     s.last = ok ? 'ok' : 'ng';
-    try { localStorage.setItem('tenbin-vocab', JSON.stringify(vstate)); } catch (err) {}
+    try { localStorage.setItem(getVocabKey(), JSON.stringify(vstate)); } catch (err) {}
   }
   function addScore(p) {
     var g = Math.round(p * multT / 10);
@@ -1009,6 +1017,7 @@ button.main:disabled:hover{background:var(--brass)}
     if (fresh) {
       if (!validNum(pnumEl.value)) { try { pnumEl.focus(); } catch (err) {} return; }
       player = pnumEl.value;
+      loadVocab();
       $('who').textContent = '番号 ' + player;
       myBest = null;
       newGame();
@@ -1040,13 +1049,13 @@ button.main:disabled:hover{background:var(--brass)}
   pnumEl.addEventListener('input', function () {
     var v = pnumEl.value.replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).replace(/[^0-9]/g, '').slice(0, 4);
     if (v !== pnumEl.value) pnumEl.value = v;
-    if (validNum(v)) { try { localStorage.setItem(PNUM_KEY, v); } catch (err) {} }
+    if (validNum(v)) { try { localStorage.setItem(PNUM_KEY, v); } catch (err) {} loadVocab(); if (!vocabEl.hidden) renderVocab(); }
     syncStart();
   });
   pnumEl.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); if (validNum(pnumEl.value)) showGame(true); }
   });
-  pnumEl.value = player; syncStart();
+  pnumEl.value = player; syncStart(); loadVocab();
 
   function fmtDate(ts) {
     if (!ts) return '';
