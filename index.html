@@ -486,6 +486,16 @@ button.main:disabled:hover{background:var(--brass)}
     try { localStorage.setItem(getVocabKey(), JSON.stringify(vstate)); } catch (err) {}
   }
 
+  /* 別のタブやウィンドウで同じプレイヤーの単語帳が更新されたときにリアルタイム反映するイベント */
+  window.addEventListener('storage', function (e) {
+    if (e.key === getVocabKey()) {
+      loadVocab();
+      if (!vocabEl.hidden) {
+        renderVocab();
+      }
+    }
+  });
+
   function addScore(p) {
     var g = Math.round(p * multT / 10);
     score += g;
@@ -1243,7 +1253,6 @@ button.main:disabled:hover{background:var(--brass)}
     initFirebase().then(function (adapter) { if (adapter) startShared(adapter); }, function () { fbError = true; });
   }
 
-  /* 修正：setView関数に vocabEl を追加し、単語帳画面が正常に表示されるように修正 */
   function setView(v) {
     [homeEl, gameEl, howEl, vocabEl, rankEl].forEach(function (el) { el.hidden = el !== v; });
     document.body.classList.toggle('gaming', v === gameEl);
