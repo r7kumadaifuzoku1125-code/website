@@ -45,7 +45,7 @@ h1{font-family:var(--font-display);font-weight:800;font-size:clamp(30px,6vw,44px
 .layout{display:grid;grid-template-columns:minmax(0,500px) minmax(0,1fr);gap:32px;align-items:start}
 @media (max-width:800px){.layout{grid-template-columns:minmax(0,1fr)}}
 .game{min-width:0}
-.hud{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0}
+.hud{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
 .stat{padding-left:12px;border-left:1px solid var(--line)}
 .stat:first-child{padding-left:0;border-left:0}
 .stat .k{display:block;font-size:11px;color:var(--muted);line-height:1.3}
@@ -82,9 +82,6 @@ canvas{display:block;width:100%;height:auto;touch-action:none;cursor:pointer}
 .home-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,380px);gap:40px;align-items:center;padding-block:16px 8px}
 .home-title{font-family:var(--font-display);font-weight:800;font-size:clamp(40px,10vw,76px);letter-spacing:.04em;line-height:1.1;margin:0 0 14px}
 .home-lead{margin:0;max-width:30em;color:var(--muted);text-wrap:pretty}
-.home-best{display:flex;align-items:baseline;gap:10px;margin-top:22px}
-.home-best .k{font-size:12px;color:var(--muted)}
-.home-best b{font-size:28px}
 .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
 button.big{min-height:56px;padding:0 30px;font-size:17px}
 .home-how{margin-top:28px;max-width:30em}
@@ -219,7 +216,6 @@ button.main:disabled:hover{background:var(--brass)}
         <input id="pnum" type="text" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="0000" enterkeyhint="go" aria-describedby="pnumHint">
         <p class="id-hint" id="pnumHint"></p>
       </div>
-      <div class="home-best"><span class="k">ベスト</span><b class="mono" id="homeBest">0</b></div>
       <div class="actions">
         <button class="main big" id="start" type="button" disabled>はじめる</button>
         <button class="big" id="resume" type="button" hidden>つづきから</button>
@@ -248,7 +244,6 @@ button.main:disabled:hover{background:var(--brass)}
     <section class="game" aria-label="ゲーム">
       <div class="hud">
         <div class="stat"><span class="k">スコア <span id="mult" class="mono">×1.0</span></span><span class="v" id="score">0</span></div>
-        <div class="stat"><span class="k">ベスト</span><span class="v" id="best">0</span></div>
         <div class="stat"><span class="k">レベル</span><span class="v" id="level">1</span></div>
         <div class="stat"><span class="k">風まで</span><span class="v" id="windin">6 手</span></div>
       </div>
@@ -270,7 +265,7 @@ button.main:disabled:hover{background:var(--brass)}
         <div class="over" id="over" hidden>
           <h2 id="ovTitle">崩壊</h2>
           <p id="ovMsg"></p>
-          <div class="res"><div><span>スコア</span><b id="ovScore">0</b></div><div><span>ベスト</span><b id="ovBest">0</b></div></div>
+          <div class="res"><div><span>スコア</span><b id="ovScore">0</b></div></div>
           <p class="rank-note" id="ovRank" aria-live="polite"></p>
           <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="main" id="again" type="button">もう一度</button><button id="toHome" type="button">ホームへ</button><button id="toRank" type="button">ランキング</button><button id="peek" type="button">盤面を見る</button></div>
         </div>
@@ -430,16 +425,16 @@ button.main:disabled:hover{background:var(--brass)}
   function setVh() { document.documentElement.style.setProperty('--vh', window.innerHeight + 'px'); }
 
   var $ = function (id) { return document.getElementById(id); };
-  var elScore = $('score'), elBest = $('best'), elLevel = $('level'), elWind = $('windin');
+  var elScore = $('score'), elLevel = $('level'), elWind = $('windin');
   var elTq = $('tq'), elPq = $('pq'), elGf = $('gf'), elGp = $('gp'), elQueue = $('queue');
   var elOver = $('over');
   var elQin = $('qin'), elMult = $('mult'), quizEl = $('quiz'), qWord = $('qWord'), qChoices = $('qChoices'), qResult = $('qResult'), qNext = $('qNext');
-  var homeEl = $('home'), gameEl = $('gameView'), howEl = $('howView'), vocabEl = $('vocabView'), rankEl = $('rankView'), elStart = $('start'), elResume = $('resume'), elHomeBest = $('homeBest');
+  var homeEl = $('home'), gameEl = $('gameView'), howEl = $('howView'), vocabEl = $('vocabView'), rankEl = $('rankView'), elStart = $('start'), elResume = $('resume');
   var moves = 0, multT = 10, asking = false, qPhase = '', qCorrect = 0, qAnswer = '', qEn = '', qRight = false, qGain = 0, quizBag = [];
 
-  var cols, queue, score, best = 0, rowsCleared, level, windIn, wind, over, cursor, curX, angle, target;
+  var cols, queue, score, rowsCleared, level, windIn, wind, over, cursor, curX, angle, target;
   var floaters = [], parts = [], pressing = false, lastT = 0;
-  try { best = +localStorage.getItem('tenbin-best') || 0; } catch (e) {}
+  try { localStorage.removeItem('tenbin-best'); } catch (e) {}
 
   function now() { return performance.now(); }
   function randW() { var r = Math.random(); return r < 0.12 ? 1 : r < 0.30 ? 2 : r < 0.52 ? 3 : r < 0.72 ? 4 : r < 0.88 ? 5 : 6; }
@@ -642,7 +637,6 @@ button.main:disabled:hover{background:var(--brass)}
 
   function hud() {
     elScore.textContent = score;
-    elBest.textContent = Math.max(best, score);
     elLevel.textContent = level;
     elWind.textContent = windIn <= 1 ? '次の手' : windIn + ' 手';
     elWind.className = 'v' + (windIn <= 1 ? ' urgent' : '');
@@ -721,11 +715,9 @@ button.main:disabled:hover{background:var(--brass)}
       target = (torque() > 0 ? 1 : -1) * COLLAPSE;
       if (reduced) angle = target;
     } else { setTarget(); }
-    if (score > best) { best = score; try { localStorage.setItem('tenbin-best', String(best)); } catch (e) {} }
     $('ovTitle').textContent = reason === 'tilt' ? '天秤が傾ききった' : '置ける柱がない';
     $('ovMsg').textContent = reason === 'tilt' ? 'トルクが ±' + LIMIT + ' を超えました。' : 'すべての柱が 9 段になりました。';
     $('ovScore').textContent = score;
-    $('ovBest').textContent = best;
     saveRun();
     elOver.hidden = false; $('showRes').hidden = true;
     hud(); gauge();
@@ -1014,7 +1006,6 @@ button.main:disabled:hover{background:var(--brass)}
   qNext.addEventListener('click', closeQuiz);
 
   function showHome() {
-    elHomeBest.textContent = Math.max(best, score);
     elResume.hidden = !(!over && moves > 0);
     setView(homeEl);
     try { window.scrollTo(0, 0); } catch (err) {}
