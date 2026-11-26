@@ -368,10 +368,6 @@ button.main:disabled:hover{background:var(--brass)}
 (function () {
   'use strict';
 
-  /* ===== Firebase の設定(ランキング用) =====
-     Firebase コンソールの「プロジェクトの設定 > マイアプリ(ウェブ)」にある firebaseConfig の中身を、ここに貼ります。
-     apiKey と projectId が入っていると、公開ページの外で開いたとき、ランキングは Firebase(Cloud Firestore)に保存されます。
-     公開ページの中では、ページに備わった共有データを使います。 */
   var FIREBASE_CONFIG = {
     apiKey: 'AIzaSyDjQP3dySDhjYs3XgXdP2980KuaBjL9rI8',
     authDomain: 'tenbin-block.firebaseapp.com',
@@ -467,22 +463,29 @@ button.main:disabled:hover{background:var(--brass)}
     ['suddenly', '突然'], ['survive', '生き残る'], ['tremble', '震える'], ['unusual', 'めずらしい'], ['victory', '勝利'],
     ['whisper', 'ささやく'], ['wisdom', '知恵'], ['weight', '重さ']
   ];
-  var vstate = {}, vFilter = 'all';
-  /* 単語帳の学習記録は、プレイヤー番号ごとに別のlocalStorageキーへ保存します。 */
+  
+  /* プレイヤー番号ごとの単語帳データ管理 */
+  var PNUM_KEY = 'tenbin-pnum';
+  var pnumEl = $('pnum'), pnumHint = $('pnumHint');
+  var player = '';
+  try { var pn = localStorage.getItem(PNUM_KEY); if (/^[0-9]{4}$/.test(pn || '')) player = pn; } catch (err) {}
+
+  var vstate = {};
   function getVocabKey() {
-    var num = validNum(player) ? player : (pnumEl && validNum(pnumEl.value) ? pnumEl.value : '0000');
-    return 'tenbin-vocab_' + num;
+    return 'tenbin-vocab_' + (player || '0000');
   }
   function loadVocab() {
-    try { vstate = JSON.parse(localStorage.getItem(getVocabKey()) || '{}') || {}; }
-    catch (err) { vstate = {}; }
+    try { vstate = JSON.parse(localStorage.getItem(getVocabKey()) || '{}') || {}; } catch (err) { vstate = {}; }
   }
+  loadVocab();
+
   function recordWord(en, ok) {
     var s = vstate[en] || (vstate[en] = { r: 0, w: 0, last: '' });
     if (ok) s.r++; else s.w++;
     s.last = ok ? 'ok' : 'ng';
     try { localStorage.setItem(getVocabKey(), JSON.stringify(vstate)); } catch (err) {}
   }
+
   function addScore(p) {
     var g = Math.round(p * multT / 10);
     score += g;
@@ -1033,11 +1036,10 @@ button.main:disabled:hover{background:var(--brass)}
   $('toHome').addEventListener('click', showHome);
 
   /* ---------- プレイヤー番号・記録・ランキング ---------- */
-  var PNUM_KEY = 'tenbin-pnum';
-  var pnumEl = $('pnum'), pnumHint = $('pnumHint');
-  var player = '', myBest = null, dbRef = null, sharedRows = [], sharedStatus = 'none', sharedTimer = null, lastSub = null, fbError = false;
+  var myBest = null, dbRef = null, sharedRows = [], sharedStatus = 'none', sharedTimer = null, lastSub = null, fbError = false;
   function validNum(v) { return /^[0-9]{4}$/.test(v || ''); }
   try { var pn = localStorage.getItem(PNUM_KEY); if (validNum(pn)) player = pn; } catch (err) {}
+  loadVocab();
   try { localStorage.removeItem('tenbin-runs'); } catch (err) {}
 
   function syncStart() {
@@ -1049,13 +1051,17 @@ button.main:disabled:hover{background:var(--brass)}
   pnumEl.addEventListener('input', function () {
     var v = pnumEl.value.replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).replace(/[^0-9]/g, '').slice(0, 4);
     if (v !== pnumEl.value) pnumEl.value = v;
-    if (validNum(v)) { try { localStorage.setItem(PNUM_KEY, v); } catch (err) {} loadVocab(); if (!vocabEl.hidden) renderVocab(); }
+    if (validNum(v)) { 
+      try { localStorage.setItem(PNUM_KEY, v); } catch (err) {} 
+      player = v;
+      loadVocab();
+    }
     syncStart();
   });
   pnumEl.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); if (validNum(pnumEl.value)) showGame(true); }
   });
-  pnumEl.value = player; syncStart(); loadVocab();
+  pnumEl.value = player; syncStart();
 
   function fmtDate(ts) {
     if (!ts) return '';
@@ -1134,7 +1140,6 @@ button.main:disabled:hover{background:var(--brass)}
     } catch (err) { dbRef = null; sharedStatus = 'none'; }
   }
 
-  /* ランキングに載っている自分の番号のベストを読み、ゲーム中の「ベスト」に使います。 */
   function loadMyBest() {
     var num = player;
     if (!dbRef || !validNum(num)) { hud(); return; }
@@ -1176,7 +1181,7 @@ button.main:disabled:hover{background:var(--brass)}
   function openRank() { renderRank(); setView(rankEl); try { window.scrollTo(0, 0); } catch (err) {} }
   $('rankBtn').addEventListener('click', openRank);
   $('toRank').addEventListener('click', openRank);
-  /* Firebase(Cloud Firestore)を、上のランキング処理がそのまま使える形に包みます。 */
+
   function makeFirestoreAdapter(fs, db) {
     function wrapErr(e) {
       return { code: e && e.code === 'permission-denied' ? 'invalid_argument' : ((e && e.code) || 'error'), message: e && e.message };
@@ -1232,19 +1237,21 @@ button.main:disabled:hover{background:var(--brass)}
       }
     } catch (err) {}
   }
-  /* 公開ページの中(window.claude がある)では共有データ、それ以外では Firebase を使います。 */
   if (window.claude && typeof window.claude.use === 'function') {
     useArtifactDb();
   } else {
     initFirebase().then(function (adapter) { if (adapter) startShared(adapter); }, function () { fbError = true; });
   }
 
+  /* 修正：setView関数に vocabEl を追加し、単語帳画面が正常に表示されるように修正 */
   function setView(v) {
     [homeEl, gameEl, howEl, vocabEl, rankEl].forEach(function (el) { el.hidden = el !== v; });
     document.body.classList.toggle('gaming', v === gameEl);
     if (v === gameEl) { setVh(); fit(); requestAnimationFrame(fit); }
   }
+
   function renderVocab() {
+    loadVocab();
     var list = WORDS.slice().sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
     var ng = list.filter(function (w) { var s = vstate[w[0]]; return s && s.last === 'ng'; });
     var seen = list.filter(function (w) { return vstate[w[0]]; }).length;
@@ -1278,6 +1285,7 @@ button.main:disabled:hover{background:var(--brass)}
       box.appendChild(b);
     });
   }
+  var vFilter = 'all';
   $('howBtn').addEventListener('click', function () { setView(howEl); try { window.scrollTo(0, 0); } catch (err) {} });
   $('vocabBtn').addEventListener('click', function () { renderVocab(); setView(vocabEl); try { window.scrollTo(0, 0); } catch (err) {} });
   Array.prototype.forEach.call(document.querySelectorAll('[data-home]'), function (b) { b.addEventListener('click', showHome); });
