@@ -742,11 +742,13 @@ button.main:disabled:hover{background:var(--brass)}
     if (p.t === 'x') explode(c); else cols[c].push(b);
 
     award(clearRows());
-    if (tiltFail()) return;
-
-    if (torque() === 0 && total() >= 6) {
-      var bn = addScore(20 * level);
-      floater('つり合い +' + bn, '#67c3a0');
+    var windComing = (windIn - 1) <= 0;
+    if (!windComing) {
+      if (tiltFail()) return;
+      if (torque() === 0 && total() >= 6) {
+        var bn = addScore(20 * level);
+        floater('つり合い +' + bn, '#67c3a0');
+      }
     }
 
     windIn--;
@@ -754,6 +756,10 @@ button.main:disabled:hover{background:var(--brass)}
       if (!dropWind()) { end('full'); return; }
       award(clearRows());
       if (tiltFail()) return;
+      if (torque() === 0 && total() >= 6) {
+        var bn2 = addScore(20 * level);
+        floater('つり合い +' + bn2, '#67c3a0');
+      }
       windIn = period(); wind = makeWind();
     }
     if (!freeCols().length) { end('full'); return; }
