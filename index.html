@@ -270,7 +270,7 @@ button.main:disabled:hover{background:var(--brass)}
         <div><dt>天秤</dt><dd>台は中心で支えられています。トルク(重さ × 中心からの柱の距離、の合計)が ±18 を超えると傾ききって負けです。</dd></div>
         <div><dt>消える</dt><dd>横 9 マスがそろった行は消えて点になります。消えた行の重さは台から離れるので、つり合いも動きます。</dd></div>
         <div><dt>風</dt><dd>数手ごとに、しま模様の風ブロックが柱の上に予告された位置へ落ちます。レベルが上がると間隔が縮みます。</dd></div>
-        <div><dt>つり合い</dt><dd>落としたあとトルクがちょうど 0 で、ブロックが 6 個以上あればボーナスが入ります。</dd></div>
+        <div><dt>つり合い</dt><dd>落としたあとトルクがちょうど 0 で、ブロックが 6 個以上があればボーナスが入ります。</dd></div>
         <div><dt>特殊ブロック</dt><dd>丸い銀色の浮き球は逆向きに効くので、傾きを戻したいときに使えます。「爆」は着地した場所の下と左右のブロックを消します。どちらもたまに次のブロックに混じります。</dd></div>
         <div><dt>英単語クイズ</dt><dd>3 手ごとに英単語の 4 択問題が出ます。正解で +50 点が入り、スコア倍率が 10% ずつ上がります(×1.1、×1.2…)。倍率はそれ以降のすべての得点にかかります。上限は ×3.0 で、上限に達してからは、正解のたびに倍率をかけたあとで 1000 点が入ります。まちがえると風が 1 手早く来ます。選択肢は <kbd>1</kbd>〜<kbd>4</kbd> でも選べます。</dd></div>
       </dl>
@@ -471,39 +471,68 @@ button.main:disabled:hover{background:var(--brass)}
   try { var pn = localStorage.getItem(PNUM_KEY); if (/^[0-9]{4}$/.test(pn || '')) player = pn; } catch (err) {}
 
   var vstate = {};
+  var vocabUnsub = null; // Firestoreのリアルタイム監視解除用
+
   function getVocabKey() {
     return 'tenbin-vocab_' + (player || '0000');
   }
+
   function loadVocab() {
-    try { vstate = JSON.parse(localStorage.getItem(getVocabKey()) || '{}') || {}; } catch (err) { vstate = {}; }
+    try { 
+      vstate = JSON.parse(localStorage.getItem(getVocabKey()) || '{}') || {}; 
+    } catch (err) { 
+      vstate = {}; 
+    }
   }
   loadVocab();
 
-  /* BroadcastChannelによるリアルタイム同期 (同一オリジンの別タブ・別画面間で即座に同期) */
-  var vocabChannel = null;
-  try {
-    vocabChannel = new BroadcastChannel('tenbin_vocab_sync');
-    vocabChannel.onmessage = function (e) {
-      if (e.data && e.data.key === getVocabKey()) {
-        loadVocab();
-        if (!vocabEl.hidden) {
-          renderVocab();
+  // クラウド（Firebase）から単語帳データを同期・取得する設定
+  function syncVocabCloud() {
+    if (vocabUnsub) { vocabUnsub(); vocabUnsub = null; }
+    if (!dbRef || !validNum(player)) return;
+    
+    try {
+      var vocabRef = dbRef.doc('vocab/' + player);
+      // 初回取得
+      vocabRef.get().then(function(snap) {
+        if (snap.exists) {
+          var cloudData = snap.data() || {};
+          // ローカルとクラウドをマージ（より学習回数が多い方、あるいは最新を優先など、お好みでクラウドを正とする）
+          vstate = cloudData;
+          try { localStorage.setItem(getVocabKey(), JSON.stringify(vstate)); } catch(e){}
+          if (!vocabEl.hidden) renderVocab();
         }
-      }
-    };
-  } catch (err) {}
+      }).catch(function(){});
+
+      // リアルタイムリスナー（別ドメインや別端末・別タブで更新されたら即座に反映）
+      vocabUnsub = vocabRef.onSnapshot(function(snap) {
+        if (snap.exists) {
+          var cloudData = snap.data() || {};
+          vstate = cloudData;
+          try { localStorage.setItem(getVocabKey(), JSON.stringify(vstate)); } catch(e){}
+          if (!vocabEl.hidden) renderVocab();
+        }
+      }, function(){});
+    } catch(err) {}
+  }
 
   function recordWord(en, ok) {
     var s = vstate[en] || (vstate[en] = { r: 0, w: 0, last: '' });
     if (ok) s.r++; else s.w++;
     s.last = ok ? 'ok' : 'ng';
     var key = getVocabKey();
+    
+    // ローカルに保存
     try { 
       localStorage.setItem(key, JSON.stringify(vstate)); 
-      if (vocabChannel) {
-        vocabChannel.postMessage({ key: key });
-      }
     } catch (err) {}
+
+    // クラウド（Firebase）に保存（これによって別ドメイン・別環境へ即座に同期される）
+    if (dbRef && validNum(player)) {
+      try {
+        dbRef.doc('vocab/' + player).set(vstate).catch(function(){});
+      } catch(err) {}
+    }
   }
 
   /* storageイベントによる別タブ間での同期維持 */
@@ -1051,6 +1080,7 @@ button.main:disabled:hover{background:var(--brass)}
       if (!validNum(pnumEl.value)) { try { pnumEl.focus(); } catch (err) {} return; }
       player = pnumEl.value;
       loadVocab();
+      syncVocabCloud(); // クラウドから最新の単語帳データを同期
       $('who').textContent = '番号 ' + player;
       myBest = null;
       newGame();
@@ -1085,6 +1115,7 @@ button.main:disabled:hover{background:var(--brass)}
       try { localStorage.setItem(PNUM_KEY, v); } catch (err) {} 
       player = v;
       loadVocab();
+      syncVocabCloud();
     }
     syncStart();
   });
@@ -1148,6 +1179,7 @@ button.main:disabled:hover{background:var(--brass)}
     try {
       dbRef = d; sharedStatus = 'loading';
       loadMyBest();
+      syncVocabCloud(); // データベース接続完了時に単語帳も同期
       sharedTimer = setTimeout(function () { if (sharedStatus === 'loading') { sharedStatus = 'slow'; renderRank(); } }, 10000);
       d.collection('scores').orderBy('best', 'desc').limit(30).onSnapshot(function (snap) {
         var rows = [];
@@ -1225,7 +1257,12 @@ button.main:disabled:hover{background:var(--brass)}
               return { exists: snap.exists(), data: function () { return snap.data(); } };
             }, function (e) { throw wrapErr(e); });
           },
-          set: function (data) { return fs.setDoc(ref, data).catch(function (e) { throw wrapErr(e); }); }
+          set: function (data) { return fs.setDoc(ref, data).catch(function (e) { throw wrapErr(e); }); },
+          onSnapshot: function (next, err) {
+            return fs.onSnapshot(ref, function(snap) {
+              next({ exists: function(){ return snap.exists(); }, data: function(){ return snap.data(); } });
+            }, err);
+          }
         };
       },
       collection: function (name) {
