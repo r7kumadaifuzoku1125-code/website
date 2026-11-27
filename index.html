@@ -97,7 +97,7 @@ button.big{min-height:56px;padding:0 30px;font-size:17px}
 .v-hide input{width:18px;height:18px;accent-color:var(--brass)}
 .v-count{margin:0 0 6px;font-size:13px}
 .v-list{max-width:42em;border-bottom:1px solid var(--line)}
-.v-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) 4.5em;gap:12px;align-items:center;width:100%;min-height:46px;padding:8px 4px;background:none;border:0;border-top:1px solid var(--line);border-radius:0;text-align:left;cursor:default}
+.v-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) 8em;gap:12px;align-items:center;width:100%;min-height:46px;padding:8px 4px;background:none;border:0;border-top:1px solid var(--line);border-radius:0;text-align:left;cursor:default}
 .v-row:hover{background:var(--panel)}
 .v-en{font-family:var(--font-mono);font-weight:700;overflow-wrap:anywhere}
 .v-ja{overflow-wrap:anywhere}
@@ -471,79 +471,150 @@ button.main:disabled:hover{background:var(--brass)}
   try { var pn = localStorage.getItem(PNUM_KEY); if (/^[0-9]{4}$/.test(pn || '')) player = pn; } catch (err) {}
 
   var vstate = {};
-  var vocabUnsub = null; // Firestoreのリアルタイム監視解除用
+  var vPlayer = null;     // vstate がどの番号のデータか
+  var vBackends = [];     // 接続できたデータベース(アーティファクトDB / Firebase)を全部登録する
+  var vChannel = null;
 
   function getVocabKey() {
     return 'tenbin-vocab_' + (player || '0000');
   }
 
-  function loadVocab() {
-    try { 
-      vstate = JSON.parse(localStorage.getItem(getVocabKey()) || '{}') || {}; 
-    } catch (err) { 
-      vstate = {}; 
+  /* ---- 単語帳データのマージ(回数は増える一方なので、大きい方を採用すれば安全) ---- */
+  function cleanVocab(o) {
+    var out = {};
+    if (!o || typeof o !== 'object') return out;
+    Object.keys(o).forEach(function (k) {
+      var v = o[k];
+      if (!v || typeof v !== 'object') return;
+      out[k] = { r: Math.max(0, v.r | 0), w: Math.max(0, v.w | 0), last: v.last === 'ok' || v.last === 'ng' ? v.last : '', t: Number(v.t) || 0 };
+    });
+    return out;
+  }
+  function mergeWord(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    var src;
+    if (a.t !== b.t) src = b.t > a.t ? b : a;
+    else src = (b.r + b.w) > (a.r + a.w) ? b : a;
+    return { r: Math.max(a.r, b.r), w: Math.max(a.w, b.w), last: src.last, t: Math.max(a.t, b.t) };
+  }
+  function mergeVocab(a, b) {
+    var out = {};
+    Object.keys(a || {}).forEach(function (k) { out[k] = a[k]; });
+    Object.keys(b || {}).forEach(function (k) { out[k] = mergeWord(out[k], b[k]); });
+    return out;
+  }
+  function sameVocab(a, b) {
+    var ka = Object.keys(a), kb = Object.keys(b);
+    if (ka.length !== kb.length) return false;
+    for (var i = 0; i < ka.length; i++) {
+      var x = a[ka[i]], y = b[ka[i]];
+      if (!y || x.r !== y.r || x.w !== y.w || x.last !== y.last) return false;
     }
+    return true;
+  }
+
+  function saveLocalVocab() {
+    try { localStorage.setItem(getVocabKey(), JSON.stringify(vstate)); } catch (err) {}
+  }
+  function readLocalVocab() {
+    try { return cleanVocab(JSON.parse(localStorage.getItem(getVocabKey()) || '{}')); } catch (err) { return {}; }
+  }
+  function loadVocab() {
+    var stored = readLocalVocab();
+    if (vPlayer === player) vstate = mergeVocab(vstate, stored);   // 同じ番号: メモリの内容を消さない
+    else { vstate = stored; vPlayer = player; }                    // 番号が変わった: 切り替え
   }
   loadVocab();
 
-  // クラウド（Firebase）から単語帳データを同期・取得する設定
-  function syncVocabCloud() {
-    if (vocabUnsub) { vocabUnsub(); vocabUnsub = null; }
-    if (!dbRef || !validNum(player)) return;
-    
-    try {
-      var vocabRef = dbRef.doc('vocab/' + player);
-      // 初回取得
-      vocabRef.get().then(function(snap) {
-        if (snap.exists) {
-          var cloudData = snap.data() || {};
-          // ローカルとクラウドをマージ（より学習回数が多い方、あるいは最新を優先など、お好みでクラウドを正とする）
-          vstate = cloudData;
-          try { localStorage.setItem(getVocabKey(), JSON.stringify(vstate)); } catch(e){}
-          if (!vocabEl.hidden) renderVocab();
-        }
-      }).catch(function(){});
+  /* 他の値(変化があれば)を取り込んで画面を更新。変化したら true */
+  function absorbVocab(other) {
+    var merged = mergeVocab(vstate, cleanVocab(other));
+    if (sameVocab(merged, vstate)) return false;
+    vstate = merged;
+    saveLocalVocab();
+    if (!vocabEl.hidden) renderVocab();
+    return true;
+  }
 
-      // リアルタイムリスナー（別ドメインや別端末・別タブで更新されたら即座に反映）
-      vocabUnsub = vocabRef.onSnapshot(function(snap) {
-        if (snap.exists) {
-          var cloudData = snap.data() || {};
-          vstate = cloudData;
-          try { localStorage.setItem(getVocabKey(), JSON.stringify(vstate)); } catch(e){}
-          if (!vocabEl.hidden) renderVocab();
-        }
-      }, function(){});
-    } catch(err) {}
+  function snapExists(snap) { return !!snap && (typeof snap.exists === 'function' ? snap.exists() : snap.exists); }
+  function snapData(snap) {
+    if (!snapExists(snap)) return {};
+    try { return cleanVocab(snap.data() || {}); } catch (err) { return {}; }
+  }
+
+  /* 1つのデータベースへ「読む→マージ→書く」。delta があればその1回分の回答を相手側の値に足す */
+  function pushVocab(be, num, delta) {
+    var ref;
+    try { ref = be.db.doc('vocab/' + num); } catch (err) { return; }
+    ref.get().then(function (snap) {
+      var remote = snapData(snap);
+      if (delta) {
+        var e = remote[delta.en] ? { r: remote[delta.en].r, w: remote[delta.en].w } : { r: 0, w: 0 };
+        if (delta.ok) e.r++; else e.w++;
+        e.last = delta.ok ? 'ok' : 'ng'; e.t = delta.t;
+        remote[delta.en] = mergeWord(remote[delta.en], e);
+      }
+      var merged = mergeVocab(remote, num === player ? vstate : {});
+      if (sameVocab(merged, remote) && snapExists(snap)) return merged;
+      return ref.set(merged).then(function () { return merged; });
+    }).then(function (merged) {
+      if (merged && num === player) absorbVocab(merged);
+    }).catch(function () {});
+  }
+
+  /* 番号ごとのリアルタイム監視(全データベース) */
+  function syncVocabCloud() {
+    vBackends.forEach(function (be) {
+      if (be.unsub) { try { be.unsub(); } catch (err) {} be.unsub = null; }
+      if (!validNum(player)) return;
+      var num = player;
+      function onRemote(snap) {
+        if (num !== player) return;
+        var remote = snapData(snap);
+        absorbVocab(remote);
+        // こちらの方が進んでいたら相手のデータベースにも反映
+        if (!sameVocab(mergeVocab(remote, vstate), remote)) pushVocab(be, num);
+      }
+      try {
+        var ref = be.db.doc('vocab/' + num);
+        ref.get().then(onRemote, function () {});
+        if (typeof ref.onSnapshot === 'function') be.unsub = ref.onSnapshot(onRemote, function () {});
+      } catch (err) {}
+    });
+  }
+  function addVocabBackend(db) {
+    if (!db) return;
+    for (var i = 0; i < vBackends.length; i++) if (vBackends[i].db === db) return;
+    vBackends.push({ db: db, unsub: null });
+    syncVocabCloud();
   }
 
   function recordWord(en, ok) {
-    var s = vstate[en] || (vstate[en] = { r: 0, w: 0, last: '' });
+    var s = vstate[en] || (vstate[en] = { r: 0, w: 0, last: '', t: 0 });
     if (ok) s.r++; else s.w++;
     s.last = ok ? 'ok' : 'ng';
-    var key = getVocabKey();
-    
-    // ローカルに保存
-    try { 
-      localStorage.setItem(key, JSON.stringify(vstate)); 
-    } catch (err) {}
-
-    // クラウド（Firebase）に保存（これによって別ドメイン・別環境へ即座に同期される）
-    if (dbRef && validNum(player)) {
-      try {
-        dbRef.doc('vocab/' + player).set(vstate).catch(function(){});
-      } catch(err) {}
-    }
+    s.t = Date.now();
+    saveLocalVocab();
+    try { if (vChannel) vChannel.postMessage({ player: player, data: vstate }); } catch (err) {}
+    var num = player;
+    if (validNum(num)) vBackends.forEach(function (be) { pushVocab(be, num, { en: en, ok: ok, t: s.t }); });
+    if (!vocabEl.hidden) renderVocab();
   }
 
-  /* storageイベントによる別タブ間での同期維持 */
+  /* 同じ端末の別タブ・別ウィンドウとの同期 */
   window.addEventListener('storage', function (e) {
-    if (e.key === getVocabKey()) {
-      loadVocab();
-      if (!vocabEl.hidden) {
-        renderVocab();
-      }
-    }
+    if (e.key === getVocabKey()) absorbVocab(readLocalVocab());
   });
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      vChannel = new BroadcastChannel('tenbin-vocab');
+      vChannel.onmessage = function (e) {
+        var m = e.data;
+        if (m && m.player === player) absorbVocab(m.data);
+      };
+    }
+  } catch (err) { vChannel = null; }
 
   function addScore(p) {
     var g = Math.round(p * multT / 10);
@@ -1179,7 +1250,6 @@ button.main:disabled:hover{background:var(--brass)}
     try {
       dbRef = d; sharedStatus = 'loading';
       loadMyBest();
-      syncVocabCloud(); // データベース接続完了時に単語帳も同期
       sharedTimer = setTimeout(function () { if (sharedStatus === 'loading') { sharedStatus = 'slow'; renderRank(); } }, 10000);
       d.collection('scores').orderBy('best', 'desc').limit(30).onSnapshot(function (snap) {
         var rows = [];
@@ -1260,7 +1330,7 @@ button.main:disabled:hover{background:var(--brass)}
           set: function (data) { return fs.setDoc(ref, data).catch(function (e) { throw wrapErr(e); }); },
           onSnapshot: function (next, err) {
             return fs.onSnapshot(ref, function(snap) {
-              next({ exists: function(){ return snap.exists(); }, data: function(){ return snap.data(); } });
+              next({ exists: snap.exists(), data: function(){ return snap.data(); } });
             }, err);
           }
         };
@@ -1297,18 +1367,22 @@ button.main:disabled:hover{background:var(--brass)}
       });
     });
   }
+  var hasArtifactDb = !!(window.claude && typeof window.claude.use === 'function');
   function useArtifactDb() {
     try {
-      if (window.claude && typeof window.claude.use === 'function') {
-        window.claude.use('db').then(function (d) { if (d) startShared(d); }, function () {});
-      }
+      window.claude.use('db').then(function (d) {
+        if (!d) return;
+        addVocabBackend(d);          // 単語帳: 接続できたものは全部使う
+        if (!dbRef) startShared(d);  // ランキング: アーティファクトDBを優先
+      }, function () {});
     } catch (err) {}
   }
-  if (window.claude && typeof window.claude.use === 'function') {
-    useArtifactDb();
-  } else {
-    initFirebase().then(function (adapter) { if (adapter) startShared(adapter); }, function () { fbError = true; });
-  }
+  if (hasArtifactDb) useArtifactDb();
+  initFirebase().then(function (adapter) {
+    if (!adapter) return;
+    addVocabBackend(adapter);                    // 単語帳は Firebase にも同時に書く
+    if (!hasArtifactDb && !dbRef) startShared(adapter);
+  }, function () { if (!hasArtifactDb) fbError = true; });
 
   function setView(v) {
     [homeEl, gameEl, howEl, vocabEl, rankEl].forEach(function (el) { el.hidden = el !== v; });
@@ -1317,7 +1391,6 @@ button.main:disabled:hover{background:var(--brass)}
   }
 
   function renderVocab() {
-    loadVocab();
     var list = WORDS.slice().sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
     var ng = list.filter(function (w) { var s = vstate[w[0]]; return s && s.last === 'ng'; });
     var seen = list.filter(function (w) { var s = vstate[w[0]]; return s && (s.r > 0 || s.w > 0); }).length;
@@ -1344,7 +1417,7 @@ button.main:disabled:hover{background:var(--brass)}
       var en = document.createElement('span'); en.className = 'v-en'; en.textContent = w[0];
       var ja = document.createElement('span'); ja.className = 'v-ja'; ja.textContent = w[1];
       var st = document.createElement('span'); st.className = 'v-st';
-      st.textContent = s ? '○' + s.r + ' ×' + s.w : '—';
+      st.textContent = s ? '○' + s.r + ' ×' + s.w + ' ' + Math.round(s.r * 100 / Math.max(1, s.r + s.w)) + '%' : '—';
       if (s && s.last === 'ng') st.classList.add('ng');
       b.appendChild(en); b.appendChild(ja); b.appendChild(st);
       b.addEventListener('click', function () { b.classList.toggle('shown'); });
