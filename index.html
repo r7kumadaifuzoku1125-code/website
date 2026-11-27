@@ -484,9 +484,37 @@ button.main:disabled:hover{background:var(--brass)}
     if (ok) s.r++; else s.w++;
     s.last = ok ? 'ok' : 'ng';
     try { localStorage.setItem(getVocabKey(), JSON.stringify(vstate)); } catch (err) {}
+    // BroadcastChannelを通じたリアルタイム同期通知
+    try {
+      if (window.BroadcastChannel) {
+        var ch = new BroadcastChannel('tenbin_vocab_sync_' + (player || '0000'));
+        ch.postMessage({ type: 'update' });
+        ch.close();
+      }
+    } catch (e) {}
   }
 
-  /* 別のタブやウィンドウで同じプレイヤーの単語帳が更新されたときにリアルタイム反映するイベント */
+  // BroadcastChannelによる別タブ・別画面間のリアルタイム同期
+  try {
+    if (window.BroadcastChannel) {
+      var syncChannel = null;
+      function initSyncChannel() {
+        if (syncChannel) syncChannel.close();
+        syncChannel = new BroadcastChannel('tenbin_vocab_sync_' + (player || '0000'));
+        syncChannel.onmessage = function (e) {
+          if (e.data && e.data.type === 'update') {
+            loadVocab();
+            if (!vocabEl.hidden) {
+              renderVocab();
+            }
+          }
+        };
+      }
+      initSyncChannel();
+    }
+  } catch (e) {}
+
+  // storageイベントによる別タブ同期のバックアップ
   window.addEventListener('storage', function (e) {
     if (e.key === getVocabKey()) {
       loadVocab();
@@ -1031,6 +1059,7 @@ button.main:disabled:hover{background:var(--brass)}
       if (!validNum(pnumEl.value)) { try { pnumEl.focus(); } catch (err) {} return; }
       player = pnumEl.value;
       loadVocab();
+      if (window.BroadcastChannel) initSyncChannel();
       $('who').textContent = '番号 ' + player;
       myBest = null;
       newGame();
@@ -1065,6 +1094,7 @@ button.main:disabled:hover{background:var(--brass)}
       try { localStorage.setItem(PNUM_KEY, v); } catch (err) {} 
       player = v;
       loadVocab();
+      if (window.BroadcastChannel) initSyncChannel();
     }
     syncStart();
   });
