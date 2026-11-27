@@ -302,7 +302,7 @@ button.main:disabled:hover{background:var(--brass)}
 
     <h2>風</h2>
     <p>数手ごとに、しま模様の風ブロック(重さ 2〜5)が、予告された柱に落ちます。予告は柱の上の「風 3」のような印で、次の手で来るときは色が濃くなります。</p>
-    <p>間隔はレベル 1 で 5 手ごとです。レベルが 1 上がるごとに 1 手ずつ短くなり、最短で 2 手ごとになります。レベルは 2 列消すごとに上がります。</p>
+    <p>間隔はレベル 1 で 5 手ごとです。レベルが 1 上がるごとに 1 手ずつ短くなり、最短で 2 手ごとになります。</p>
 
     <h2>特殊ブロック</h2>
     <p>どちらもたまに、次のブロックに混じります。</p>
@@ -479,42 +479,34 @@ button.main:disabled:hover{background:var(--brass)}
   }
   loadVocab();
 
+  /* BroadcastChannelによるリアルタイム同期 (同一オリジンの別タブ・別画面間で即座に同期) */
+  var vocabChannel = null;
+  try {
+    vocabChannel = new BroadcastChannel('tenbin_vocab_sync');
+    vocabChannel.onmessage = function (e) {
+      if (e.data && e.data.key === getVocabKey()) {
+        loadVocab();
+        if (!vocabEl.hidden) {
+          renderVocab();
+        }
+      }
+    };
+  } catch (err) {}
+
   function recordWord(en, ok) {
     var s = vstate[en] || (vstate[en] = { r: 0, w: 0, last: '' });
     if (ok) s.r++; else s.w++;
     s.last = ok ? 'ok' : 'ng';
-    try { localStorage.setItem(getVocabKey(), JSON.stringify(vstate)); } catch (err) {}
-    // BroadcastChannelを通じたリアルタイム同期通知
-    try {
-      if (window.BroadcastChannel) {
-        var ch = new BroadcastChannel('tenbin_vocab_sync_' + (player || '0000'));
-        ch.postMessage({ type: 'update' });
-        ch.close();
+    var key = getVocabKey();
+    try { 
+      localStorage.setItem(key, JSON.stringify(vstate)); 
+      if (vocabChannel) {
+        vocabChannel.postMessage({ key: key });
       }
-    } catch (e) {}
+    } catch (err) {}
   }
 
-  // BroadcastChannelによる別タブ・別画面間のリアルタイム同期
-  try {
-    if (window.BroadcastChannel) {
-      var syncChannel = null;
-      function initSyncChannel() {
-        if (syncChannel) syncChannel.close();
-        syncChannel = new BroadcastChannel('tenbin_vocab_sync_' + (player || '0000'));
-        syncChannel.onmessage = function (e) {
-          if (e.data && e.data.type === 'update') {
-            loadVocab();
-            if (!vocabEl.hidden) {
-              renderVocab();
-            }
-          }
-        };
-      }
-      initSyncChannel();
-    }
-  } catch (e) {}
-
-  // storageイベントによる別タブ同期のバックアップ
+  /* storageイベントによる別タブ間での同期維持 */
   window.addEventListener('storage', function (e) {
     if (e.key === getVocabKey()) {
       loadVocab();
@@ -1059,7 +1051,6 @@ button.main:disabled:hover{background:var(--brass)}
       if (!validNum(pnumEl.value)) { try { pnumEl.focus(); } catch (err) {} return; }
       player = pnumEl.value;
       loadVocab();
-      if (window.BroadcastChannel) initSyncChannel();
       $('who').textContent = '番号 ' + player;
       myBest = null;
       newGame();
@@ -1094,7 +1085,6 @@ button.main:disabled:hover{background:var(--brass)}
       try { localStorage.setItem(PNUM_KEY, v); } catch (err) {} 
       player = v;
       loadVocab();
-      if (window.BroadcastChannel) initSyncChannel();
     }
     syncStart();
   });
@@ -1293,7 +1283,7 @@ button.main:disabled:hover{background:var(--brass)}
     loadVocab();
     var list = WORDS.slice().sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
     var ng = list.filter(function (w) { var s = vstate[w[0]]; return s && s.last === 'ng'; });
-    var seen = list.filter(function (w) { return vstate[w[0]]; }).length;
+    var seen = list.filter(function (w) { var s = vstate[w[0]]; return s && (s.r > 0 || s.w > 0); }).length;
     var rows = vFilter === 'ng' ? ng : list;
     $('vCount').textContent = '出題済み ' + seen + ' / ' + list.length + ' 語、要復習 ' + ng.length + ' 語';
     $('vAll').className = vFilter === 'all' ? 'on' : '';
